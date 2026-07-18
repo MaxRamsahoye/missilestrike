@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Missile Strike</title>
+    <!-- Radar Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 10 Q70 30 65 70 L80 90 L50 80 L20 90 L35 70 Q30 30 50 10 Z' fill='red'/></svg>">
     <style>
         body, html {
             margin: 0;
@@ -53,7 +55,7 @@
         function resize() {
             width = canvas.width = window.innerWidth;
             height = canvas.height = window.innerHeight;
-            groundY = height - 100;
+            groundY = height - 150; // Ground line raised
             if (player) {
                 player.x = 120;
                 player.y = groundY - 18;
@@ -61,7 +63,7 @@
         }
         window.addEventListener('resize', resize);
 
-        // Expanded Level Configuration
+        // Expanded Level Configuration (Main Game)
         const levelData = {
             1: { totalScore: 15,  rates: {inf: 160, tank: 0,   mech: 0,   drone: 0,   heli: 0,   bomber: 0},   speedMult: 1.0 },
             2: { totalScore: 80,  rates: {inf: 120, tank: 250, mech: 0,   drone: 0,   heli: 0,   bomber: 0},   speedMult: 1.2 },
@@ -77,6 +79,8 @@
 
         // Game States
         let gameState = 'LOADING'; 
+        let gameMode = 'MAIN'; 
+        let menuSelectedMode = 'MAIN';
         let loadTimer = 0;
         const loadDuration = 150; 
         
@@ -85,12 +89,17 @@
         let level = 1;
         let selectedStartLevel = 1; 
         
+        // RVD Wave Input
+        let rvdStartWaveStr = "1";
+        let hasTypedRVD = false;
+        
         let levelBudget = 0;
         let maxLevelBudget = 0;
         let isIntermission = false;
         let intermissionTimer = 0;
 
         let shotsFired = 0;
+        let swarmMissilesReady = 0;
         let frameCount = 0;
         let levelFrames = 0; 
         
@@ -118,34 +127,113 @@
         let enemies = [];
         let particles = [];
 
+        // Menu Layout Helper
+        function getMenuLayout() {
+            let bw = 70, bh = 45, gap = 15;
+            let totalW = 5 * bw + 4 * gap;
+            let startX = width / 2 - totalW / 2;
+            let startY = height / 2 - 20;
+            let rvdY = startY + 2 * (bh + gap);
+            return { bw, bh, gap, totalW, startX, startY, rvdY };
+        }
+
+        function updateCursor() {
+            if (gameState === 'PLAYING' || gameState === 'PAUSED') {
+                canvas.style.cursor = 'none';
+            } else if (gameState === 'START_MENU') {
+                let layout = getMenuLayout();
+                let isHovering = false;
+                
+                for (let i = 0; i < 10; i++) {
+                    let row = Math.floor(i / 5);
+                    let col = i % 5;
+                    let bx = layout.startX + col * (layout.bw + layout.gap);
+                    let by = layout.startY + row * (layout.bh + layout.gap);
+                    if (mouse.x >= bx && mouse.x <= bx + layout.bw && mouse.y >= by && mouse.y <= by + layout.bh) {
+                        isHovering = true;
+                        break;
+                    }
+                }
+
+                if (!isHovering && mouse.x >= layout.startX && mouse.x <= layout.startX + layout.totalW && mouse.y >= layout.rvdY && mouse.y <= layout.rvdY + layout.bh) {
+                    isHovering = true;
+                }
+                
+                canvas.style.cursor = isHovering ? 'pointer' : 'default';
+            } else {
+                canvas.style.cursor = 'default';
+            }
+        }
+
         // Input Handling
         window.addEventListener('keydown', (e) => {
             if (e.code === 'KeyT') isDark = !isDark;
             
             if (gameState === 'START_MENU') {
-                if (e.code.startsWith('Digit')) {
-                    let num = parseInt(e.key);
-                    if (num === 0) num = 10;
-                    if (num >= 1 && num <= 10) selectedStartLevel = num;
+                if (e.code === 'Backspace' && menuSelectedMode === 'RVD') {
+                    rvdStartWaveStr = rvdStartWaveStr.slice(0, -1);
+                    if (rvdStartWaveStr === "") {
+                        rvdStartWaveStr = "1";
+                        hasTypedRVD = false;
+                    }
                 }
-            }
-
-            if (gameState === 'PLAYING' || gameState === 'PAUSED' || gameState === 'START_MENU') {
-                if (e.code === 'KeyM') shootingMode = shootingMode === 'TARGET' ? 'CHARGE' : 'TARGET';
                 
-                // Weapon Selection Toggle
-                if (e.code === 'KeyQ') {
-                    if (activeWeapon === 'MISSILE') activeWeapon = 'LASER';
-                    else if (activeWeapon === 'LASER') activeWeapon = 'MACHINE_GUN';
-                    else activeWeapon = 'MISSILE';
+                if (e.code.startsWith('Digit')) {
+                    let num = e.key;
+                    if (menuSelectedMode === 'MAIN') {
+                        let n = parseInt(num);
+                        if (n === 0) n = 10;
+                        selectedStartLevel = n;
+                    } else if (menuSelectedMode === 'RVD') {
+                        if (!hasTypedRVD) {
+                            rvdStartWaveStr = num;
+                            hasTypedRVD = true;
+                        } else if (rvdStartWaveStr.length < 3) {
+                            rvdStartWaveStr += num;
+                        }
+                    }
+                }
+
+                if (e.code === 'Space' || e.code === 'Enter') {
+                    gameMode = menuSelectedMode;
+                    shootingMode = gameMode === 'MAIN' ? 'TARGET' : 'CHARGE'; 
+                    resetGame();
+                    let startLvl = 1;
+                    if (gameMode === 'MAIN') {
+                        startLvl = selectedStartLevel;
+                    } else {
+                        startLvl = parseInt(rvdStartWaveStr);
+                        if (isNaN(startLvl) || startLvl < 1) startLvl = 1;
+                    }
+                    initLevel(startLvl);
+                    gameState = 'PLAYING';
+                    return;
                 }
             }
 
-            // Direct Weapon Selection Keys
             if (gameState === 'PLAYING' || gameState === 'PAUSED') {
-                if (e.code === 'Digit1') activeWeapon = 'MISSILE';
-                if (e.code === 'Digit2') activeWeapon = 'LASER';
-                if (e.code === 'Digit3') activeWeapon = 'MACHINE_GUN';
+                if (e.code === 'KeyM') {
+                    if (gameMode === 'RVD') {
+                        shootingMode = shootingMode === 'TARGET' ? 'CHARGE' : 'TARGET';
+                    }
+                }
+                
+                if (e.code === 'KeyQ') {
+                    if (gameMode === 'RVD') {
+                        if (activeWeapon === 'MISSILE' && swarmMissilesReady > 0) activeWeapon = 'SWARM';
+                        else if (activeWeapon === 'SWARM') activeWeapon = 'MISSILE';
+                    } else {
+                        if (activeWeapon === 'MISSILE') activeWeapon = 'LASER';
+                        else if (activeWeapon === 'LASER') activeWeapon = 'MACHINE_GUN';
+                        else activeWeapon = 'MISSILE';
+                    }
+                }
+
+                if (gameMode === 'MAIN') {
+                    if (e.code === 'Digit1') activeWeapon = 'MISSILE';
+                    if (e.code === 'Digit2') activeWeapon = 'LASER';
+                    if (e.code === 'Digit3') activeWeapon = 'MACHINE_GUN';
+                }
             }
             
             if (e.code === 'KeyP') {
@@ -156,6 +244,7 @@
             if (e.code === 'Escape') {
                 if (gameState === 'PLAYING' || gameState === 'PAUSED' || gameState === 'GAME_OVER' || gameState === 'GAME_CLEARED') {
                     resetGame();
+                    hasTypedRVD = false;
                     gameState = 'START_MENU';
                 }
             }
@@ -170,9 +259,31 @@
             isMouseDown = true;
             
             if (gameState === 'START_MENU') {
-                resetGame();
-                initLevel(selectedStartLevel);
-                gameState = 'PLAYING';
+                let layout = getMenuLayout();
+                let clickedBox = false;
+
+                // Check Level Boxes
+                for (let i = 0; i < 10; i++) {
+                    let row = Math.floor(i / 5);
+                    let col = i % 5;
+                    let bx = layout.startX + col * (layout.bw + layout.gap);
+                    let by = layout.startY + row * (layout.bh + layout.gap);
+                    
+                    if (mouse.x >= bx && mouse.x <= bx + layout.bw && mouse.y >= by && mouse.y <= by + layout.bh) {
+                        selectedStartLevel = i + 1;
+                        menuSelectedMode = 'MAIN';
+                        clickedBox = true;
+                        break;
+                    }
+                }
+
+                // Check RVD Box
+                if (!clickedBox && mouse.x >= layout.startX && mouse.x <= layout.startX + layout.totalW && mouse.y >= layout.rvdY && mouse.y <= layout.rvdY + layout.bh) {
+                    menuSelectedMode = 'RVD';
+                    clickedBox = true;
+                }
+                
+                // Do not auto-start on click. Wait for space to launch
                 return;
             }
             
@@ -193,9 +304,9 @@
 
             if (activeWeapon === 'LASER') {
                 fireLaser();
-                fireCooldown = 45;
-            } else if (activeWeapon === 'MISSILE') {
-                if (missiles.length >= 12) return; 
+                fireCooldown = 30;
+            } else if (activeWeapon === 'MISSILE' || activeWeapon === 'SWARM') {
+                if (missiles.length >= 80) return; 
                 if (shootingMode === 'CHARGE') {
                     isCharging = true;
                     chargeLevel = 5; 
@@ -208,7 +319,7 @@
 
         canvas.addEventListener('mouseup', (e) => {
             isMouseDown = false;
-            if (gameState === 'PLAYING' && activeWeapon === 'MISSILE' && shootingMode === 'CHARGE' && isCharging && !isIntermission) {
+            if (gameState === 'PLAYING' && (activeWeapon === 'MISSILE' || activeWeapon === 'SWARM') && shootingMode === 'CHARGE' && isCharging && !isIntermission) {
                 fireMissileChargeMode();
                 isCharging = false;
                 chargeLevel = 0;
@@ -221,25 +332,14 @@
             let B = py - y1;
             let C = x2 - x1;
             let D = y2 - y1;
-            
             let dot = A * C + B * D;
             let len_sq = C * C + D * D;
             let param = -1;
             if (len_sq != 0) param = dot / len_sq;
-            
             let xx, yy;
-            
-            if (param < 0) {
-                xx = x1;
-                yy = y1;
-            } else if (param > 1) {
-                xx = x2;
-                yy = y2;
-            } else {
-                xx = x1 + param * C;
-                yy = y1 + param * D;
-            }
-            
+            if (param < 0) { xx = x1; yy = y1; } 
+            else if (param > 1) { xx = x2; yy = y2; } 
+            else { xx = x1 + param * C; yy = y1 + param * D; }
             let dx = px - xx;
             let dy = py - yy;
             return Math.sqrt(dx * dx + dy * dy);
@@ -251,7 +351,9 @@
             let dx = targetX - startX;
             let dy = targetY - startY;
             let dist = Math.hypot(dx, dy);
-            let arcHeight = dist * 0.08; // Made arc much flatter
+            
+            let isAirShot = gameMode === 'MAIN' && targetY < groundY - 80;
+            let arcHeight = isAirShot ? 0 : dist * 0.08; 
             
             let initialDy = dy - arcHeight * Math.PI; 
             let aimAngle = Math.atan2(initialDy, dx);
@@ -270,18 +372,21 @@
                 if (targetX > maxRange) targetX = maxRange;
             }
 
-            if (activeWeapon === 'MISSILE' && shootingMode === 'TARGET' && targetX > startX) {
+            if ((activeWeapon === 'MISSILE' || activeWeapon === 'SWARM') && shootingMode === 'TARGET' && targetX > startX) {
                 let params = getTargetModeArcParams(targetX, targetY);
                 return Math.max(-Math.PI / 1.1, Math.min(0, params.aimAngle));
             } else {
                 let aimAngle = Math.atan2(targetY - startY, targetX - startX);
-                return Math.max(-Math.PI / 1.1, Math.min(0, aimAngle));
+                return Math.max(-Math.PI / 1.1, Math.min(Math.PI / 4, aimAngle));
             }
         }
 
         function triggerShotLogic() {
             shotsFired++;
-            return (shotsFired % 5 === 0);
+            if (gameMode === 'RVD' && shotsFired % 5 === 0) {
+                swarmMissilesReady = 1; 
+            }
+            return (shotsFired % 3 === 0);
         }
 
         function fireMachineGun() {
@@ -293,14 +398,9 @@
             let vy = Math.sin(aimAngle) * speed;
             
             bullets.push({ 
-                x: startX, 
-                y: startY, 
-                startX: startX,
-                startY: startY,
-                lastX: startX, 
-                lastY: startY, 
-                vx: vx, 
-                vy: vy 
+                x: startX, y: startY, 
+                startX: startX, startY: startY,
+                vx: vx, vy: vy 
             });
         }
 
@@ -320,7 +420,6 @@
                     let en = enemies[i];
                     if (['drone', 'heli', 'bomber'].includes(en.type)) {
                         let dist = getDistanceToLineSegment(en.x, en.y, startX, startY, endX, endY);
-                        
                         if (dist < Math.max(en.width, en.height) / 2 + 15) { 
                             let expSize = en.type === 'bomber' ? 45 : (en.type === 'heli' ? 30 : 20);
                             createExplosion(en.x, en.y, expSize);
@@ -328,18 +427,26 @@
                         }
                     }
                 }
-                
                 lasers.push({ startX, startY, endX, endY, timer: 15, maxTimer: 15 });
             }
         }
 
         function fireMissileTargetMode() {
-            let isCluster = triggerShotLogic();
+            let isSwarm = (activeWeapon === 'SWARM');
+            let isCluster = false;
+
+            if (isSwarm) {
+                swarmMissilesReady--;
+                if (swarmMissilesReady <= 0) activeWeapon = 'MISSILE';
+            } else {
+                isCluster = triggerShotLogic();
+            }
+
             let targetX = mouse.x;
             let targetY = Math.min(mouse.y, groundY); 
             
             let params = getTargetModeArcParams(targetX, targetY);
-            let framesToTarget = Math.max(5, params.dist / 25); // Increased missile velocity significantly
+            let framesToTarget = Math.max(5, params.dist / 25); 
 
             missiles.push({
                 mode: 'TARGET',
@@ -349,12 +456,24 @@
                 arcHeight: params.arcHeight,
                 timer: framesToTarget, initialTimer: framesToTarget,
                 path: [],
-                isCluster: isCluster 
+                isCluster: isCluster,
+                isSwarmParent: isSwarm,
+                age: 0,
+                splitTime: -1 
             });
         }
 
         function fireMissileChargeMode() {
-            let isCluster = triggerShotLogic();
+            let isSwarm = (activeWeapon === 'SWARM');
+            let isCluster = false;
+
+            if (isSwarm) {
+                swarmMissilesReady--;
+                if (swarmMissilesReady <= 0) activeWeapon = 'MISSILE';
+            } else {
+                isCluster = triggerShotLogic();
+            }
+
             let startX = player.x + 10;
             let startY = player.y - 15; 
             let aimAngle = getPodAngle();
@@ -362,7 +481,30 @@
             let velocity = chargeLevel;
             let vx = Math.cos(aimAngle) * velocity;
             let vy = Math.sin(aimAngle) * velocity;
-            let gravity = 0.25;
+            
+            let targetY = Math.min(mouse.y, groundY);
+            let gravity = (gameMode === 'RVD' || targetY >= groundY - 80) ? 0.25 : 0;
+
+            let splitTime = -1;
+            if (isSwarm || isCluster) {
+                if (gravity > 0) {
+                    let a = 0.5 * gravity; 
+                    let b = vy;
+                    let c = startY - groundY;
+                    let disc = b*b - 4*a*c;
+                    if (disc > 0) {
+                        let t = (-b + Math.sqrt(disc)) / (2*a);
+                        splitTime = isSwarm ? Math.floor(t / 4) : Math.floor(t / 3);
+                    } else {
+                        splitTime = 15; 
+                    }
+                } else {
+                    let distanceX = width - startX;
+                    let t = distanceX / Math.abs(vx || 1);
+                    splitTime = isSwarm ? Math.floor(t / 4) : Math.floor(t / 3);
+                }
+                splitTime = Math.max(5, splitTime);
+            }
 
             missiles.push({
                 mode: 'CHARGE',
@@ -370,14 +512,25 @@
                 vx: vx, vy: vy, g: gravity, 
                 path: [],
                 isCluster: isCluster,
-                hasSplit: false
+                isSwarmParent: isSwarm,
+                hasSplit: false,
+                age: 0,
+                splitTime: splitTime
             });
         }
 
         function initLevel(lvl) {
             level = lvl;
-            lives = maxLives; // Reset lives each level
-            maxLevelBudget = levelData[level].totalScore;
+            lives = maxLives;
+            
+            if (gameMode === 'MAIN') {
+                maxLevelBudget = levelData[level].totalScore;
+                activeWeapon = 'MISSILE';
+            } else if (gameMode === 'RVD') {
+                maxLevelBudget = 30 + level * 20; 
+                activeWeapon = 'MISSILE';
+            }
+
             levelBudget = maxLevelBudget;
             isIntermission = false;
             intermissionTimer = 0;
@@ -390,6 +543,7 @@
 
         function resetGame() {
             shotsFired = 0;
+            swarmMissilesReady = 0;
             fireCooldown = 0;
             missiles = [];
             lasers = [];
@@ -400,10 +554,9 @@
             chargeLevel = 0;
             frameCount = 0;
             levelFrames = 0;
-            // Lives and other variables are set in initLevel
         }
 
-        function spawnEnemyType(type) {
+        function spawnEnemyType(type, customSpeedMod = null) {
             let cost = 1;
             if (type === 'drone') cost = 10;
             if (type === 'tank') cost = 5;
@@ -413,8 +566,8 @@
 
             if (levelBudget >= cost) {
                 levelBudget -= cost;
-                let conf = levelData[level];
-                let speedMod = conf.speedMult;
+                
+                let speedMod = customSpeedMod ? customSpeedMod : levelData[level].speedMult;
                 let skyCeiling = 110; 
                 let flightZone = groundY - skyCeiling;
 
@@ -463,20 +616,21 @@
                         type: 'bomber',
                         x: width + 50,
                         y: skyCeiling + Math.random() * (flightZone - 60), 
-                        width: 75, height: 26, // Made thicker 
+                        width: 75, height: 26, 
                         speed: (4.0 + Math.random() * 1.5) * speedMod 
                     });
                 }
             }
         }
 
-        function createExplosion(x, y, radius = 45) {
+        function createExplosion(x, y, radius = 45, color = null) {
             explosions.push({
                 x: x, y: y,
                 radius: 0,
                 maxRadius: radius + Math.random() * 15,
                 duration: 50, 
-                timer: 0
+                timer: 0,
+                color: color
             });
 
             for (let i = 0; i < 15; i++) {
@@ -485,7 +639,7 @@
                     vx: (Math.random() - 0.5) * 8,
                     vy: (Math.random() - 0.5) * 8,
                     life: 20 + Math.random() * 20,
-                    color: i % 2 === 0 ? theme.fg() : theme.trail() 
+                    color: color ? color : (i % 2 === 0 ? theme.fg() : theme.trail()) 
                 });
             }
         }
@@ -495,12 +649,21 @@
         resetGame();
 
         function drawUIMissile(x, y, w, h) {
-            ctx.fillRect(x - w/2, y, w, h);
+            let tipH = h * 0.35;
+            let bodyH = h - tipH;
+            
+            ctx.fillRect(x - w/2, y + tipH, w, bodyH);
+            
             ctx.beginPath();
-            ctx.moveTo(x - w/2, y);
-            ctx.lineTo(x, y - w);
-            ctx.lineTo(x + w/2, y);
+            ctx.moveTo(x - w/2, y + tipH);
+            ctx.lineTo(x, y);
+            ctx.lineTo(x + w/2, y + tipH);
             ctx.fill();
+            
+            let oldFill = ctx.fillStyle;
+            ctx.fillStyle = theme.enemyDetail();
+            ctx.fillRect(x - w/2, y + h - bodyH * 0.3, w, bodyH * 0.3);
+            ctx.fillStyle = oldFill;
         }
 
         function update() {
@@ -516,7 +679,6 @@
             
             if (fireCooldown > 0) fireCooldown--;
 
-            // Full Auto Machine Gun
             if (isMouseDown && activeWeapon === 'MACHINE_GUN' && fireCooldown <= 0 && !isIntermission) {
                 if (mouse.x > player.x + 20) {
                     fireMachineGun();
@@ -527,10 +689,10 @@
             if (isIntermission) {
                 intermissionTimer--;
                 if (intermissionTimer <= 0) {
-                    if (level < 10) {
-                        initLevel(level + 1);
-                    } else {
+                    if (gameMode === 'MAIN' && level >= 10) {
                         gameState = 'GAME_CLEARED';
+                    } else {
+                        initLevel(level + 1);
                     }
                 }
             } else {
@@ -541,18 +703,27 @@
                 }
             }
 
-            if (activeWeapon === 'MISSILE' && isCharging && chargeLevel < maxCharge) {
+            if ((activeWeapon === 'MISSILE' || activeWeapon === 'SWARM') && isCharging && chargeLevel < maxCharge) {
                 chargeLevel += 0.4;
             }
 
             if (!isIntermission && levelBudget > 0) {
-                let conf = levelData[level];
-                if (conf.rates.drone > 0 && frameCount % conf.rates.drone === 0) spawnEnemyType('drone');
-                if (conf.rates.inf > 0 && frameCount % conf.rates.inf === 0) spawnEnemyType('infantry');
-                if (conf.rates.tank > 0 && frameCount % conf.rates.tank === 0) spawnEnemyType('tank');
-                if (conf.rates.mech > 0 && frameCount % conf.rates.mech === 0) spawnEnemyType('mech');
-                if (conf.rates.heli > 0 && frameCount % conf.rates.heli === 0) spawnEnemyType('heli');
-                if (conf.rates.bomber > 0 && frameCount % conf.rates.bomber === 0) spawnEnemyType('bomber');
+                if (gameMode === 'MAIN') {
+                    let conf = levelData[level];
+                    if (conf.rates.drone > 0 && frameCount % conf.rates.drone === 0) spawnEnemyType('drone');
+                    if (conf.rates.inf > 0 && frameCount % conf.rates.inf === 0) spawnEnemyType('infantry');
+                    if (conf.rates.tank > 0 && frameCount % conf.rates.tank === 0) spawnEnemyType('tank');
+                    if (conf.rates.mech > 0 && frameCount % conf.rates.mech === 0) spawnEnemyType('mech');
+                    if (conf.rates.heli > 0 && frameCount % conf.rates.heli === 0) spawnEnemyType('heli');
+                    if (conf.rates.bomber > 0 && frameCount % conf.rates.bomber === 0) spawnEnemyType('bomber');
+                } else if (gameMode === 'RVD') {
+                    let droneRate = Math.max(30, 160 - level * 10);
+                    let infRate = Math.max(40, 140 - level * 8);
+                    let dynSpeed = 1.0 + level * 0.1;
+                    
+                    if (frameCount % droneRate === 0) spawnEnemyType('drone', dynSpeed);
+                    if (frameCount % infRate === 0) spawnEnemyType('infantry', dynSpeed);
+                }
             }
 
             for (let i = lasers.length - 1; i >= 0; i--) {
@@ -569,10 +740,12 @@
                 b.x += b.vx;
                 b.y += b.vy;
                 
-                let distTraveled = Math.hypot(b.x - b.startX, b.y - b.startY);
+                let dx = b.x - b.startX;
+                let dy = b.y - b.startY;
+                let isOutsideEllipse = ((dx * dx) / (maxRangeMG * maxRangeMG)) + ((dy * dy) / (maxRangeMG * maxRangeMG)) > 1;
                 let detonated = false;
                 
-                if (distTraveled > maxRangeMG || b.y >= groundY || b.y < 0) {
+                if (isOutsideEllipse || b.y >= groundY || b.y < 0) {
                     detonated = true;
                 } else {
                     for (let j = enemies.length - 1; j >= 0; j--) {
@@ -600,8 +773,11 @@
                 if (detonated) bullets.splice(i, 1);
             }
 
+            for (let en of enemies) en.isTargeted = false;
+
             for (let i = missiles.length - 1; i >= 0; i--) {
                 let m = missiles[i];
+                m.age++;
                 
                 m.path.push({x: m.x, y: m.y});
                 if (m.path.length > 20) m.path.shift();
@@ -611,6 +787,31 @@
                     let t = 1 - (m.timer / m.initialTimer);
                     m.x = m.startX + (m.targetX - m.startX) * t;
                     m.y = m.startY + (m.targetY - m.startY) * t - m.arcHeight * Math.sin(t * Math.PI);
+                } else if (m.mode === 'SWARM_CHILD') {
+                    if (m.targetObj && enemies.includes(m.targetObj)) {
+                        m.targetObj.isTargeted = true; 
+                        let hitY = (['tank', 'infantry', 'mech'].includes(m.targetObj.type)) ? m.targetObj.y - m.targetObj.height/2 : m.targetObj.y;
+                        let targetAngle = Math.atan2(hitY - m.y, m.targetObj.x - m.x);
+                        let currentAngle = Math.atan2(m.vy, m.vx);
+                        
+                        let angleDiff = targetAngle - currentAngle;
+                        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                        
+                        let turnSpeed = 0.15; 
+                        if (angleDiff > turnSpeed) currentAngle += turnSpeed;
+                        else if (angleDiff < -turnSpeed) currentAngle -= turnSpeed;
+                        else currentAngle = targetAngle;
+                        
+                        m.vx = Math.cos(currentAngle) * m.speed;
+                        m.vy = Math.sin(currentAngle) * m.speed;
+                    } else {
+                        if (enemies.length > 0) {
+                            m.targetObj = enemies[Math.floor(Math.random() * enemies.length)];
+                        }
+                    }
+                    m.x += m.vx;
+                    m.y += m.vy;
                 } else {
                     m.x += m.vx;
                     m.y += m.vy;
@@ -618,10 +819,62 @@
                     if (m.mode === 'CLUSTER_CHILD') m.timer--;
                 }
 
+                if (m.isSwarmParent) {
+                    let shouldSplit = false;
+                    if (m.mode === 'TARGET') {
+                        shouldSplit = (m.timer <= m.initialTimer * 0.75); 
+                    } else {
+                        shouldSplit = (m.age >= m.splitTime);
+                    }
+
+                    if (shouldSplit) {
+                        let curVx = 0, curVy = 0;
+                        if (m.mode === 'TARGET') {
+                            let t1 = 1 - ((m.timer+1) / m.initialTimer);
+                            let t2 = 1 - (m.timer / m.initialTimer);
+                            let x1 = m.startX + (m.targetX - m.startX) * t1;
+                            let x2 = m.startX + (m.targetX - m.startX) * t2;
+                            let y1 = m.startY + (m.targetY - m.startY) * t1 - m.arcHeight * Math.sin(t1 * Math.PI);
+                            let y2 = m.startY + (m.targetY - m.startY) * t2 - m.arcHeight * Math.sin(t2 * Math.PI);
+                            curVx = x2 - x1;
+                            curVy = y2 - y1;
+                        } else {
+                            curVx = m.vx;
+                            curVy = m.vy;
+                        }
+
+                        let availableTargets = [...enemies].sort(() => Math.random() - 0.5);
+
+                        for(let k=0; k<10; k++) {
+                            let target = availableTargets.length > 0 ? availableTargets[k % availableTargets.length] : null;
+                            let angleOffset = (Math.random() - 0.5) * Math.PI * 0.8; 
+                            let speed = 12 + Math.random() * 3; 
+                            let baseAngle = Math.atan2(curVy, curVx);
+                            let newAngle = baseAngle + angleOffset;
+                            missiles.push({
+                                mode: 'SWARM_CHILD',
+                                x: m.x, y: m.y,
+                                vx: Math.cos(newAngle) * speed,
+                                vy: Math.sin(newAngle) * speed,
+                                g: 0, 
+                                path: [...m.path], 
+                                targetObj: target,
+                                speed: speed,
+                                age: 0
+                            });
+                        }
+                        missiles.splice(i, 1);
+                        continue;
+                    }
+                }
+
                 if (m.isCluster) {
-                    let shouldSplit = (m.mode === 'TARGET') 
-                        ? (m.timer <= m.initialTimer * 0.6) 
-                        : (m.vy > 0 && !m.hasSplit); 
+                    let shouldSplit = false;
+                    if (m.mode === 'TARGET') {
+                        shouldSplit = (m.timer <= m.initialTimer * 0.666); 
+                    } else {
+                        shouldSplit = (m.age >= m.splitTime && !m.hasSplit && m.splitTime > 0);
+                    }
 
                     if (shouldSplit) {
                         m.isCluster = false; 
@@ -636,7 +889,11 @@
                                 let cDx = childTargetX - m.x;
                                 let cDy = childTargetY - m.y;
                                 let childVx = cDx / childTimer;
-                                let g = 0.25;
+                                
+                                let isAirShot = gameMode === 'MAIN' && childTargetY < groundY - 80;
+                                let childArcHeight = isAirShot ? 0 : Math.hypot(cDx, cDy) * 0.08;
+                                
+                                let g = isAirShot ? 0 : 0.25;
                                 let childVy = (cDy - 0.5 * g * Math.pow(childTimer, 2)) / childTimer;
 
                                 missiles.push({
@@ -684,8 +941,8 @@
                     detonated = true;
                 }
                 
-                if (m.mode === 'CHARGE') {
-                    if (m.y >= groundY || m.x > width + 100) detonated = true;
+                if (m.mode === 'CHARGE' || m.mode === 'SWARM_CHILD') {
+                    if (m.y >= groundY || m.x > width + 100 || m.y < -100 || m.x < -100) detonated = true;
                     if (!detonated) {
                         for (let en of enemies) {
                             let hitY = (['tank', 'infantry', 'mech'].includes(en.type)) ? en.y - en.height/2 : en.y;
@@ -699,7 +956,13 @@
                 }
 
                 if (detonated) {
-                    if (m.x < width) createExplosion(m.x, Math.min(m.y, groundY));
+                    if (m.x < width && m.x > -50 && m.y > -50 && m.y <= groundY + 10) {
+                        let expColor = null;
+                        if (m.isCluster || m.mode === 'CLUSTER_CHILD' || m.isSwarmParent || m.mode === 'SWARM_CHILD') {
+                            expColor = '#f00';
+                        }
+                        createExplosion(m.x, Math.min(m.y, groundY), 45, expColor);
+                    }
                     missiles.splice(i, 1);
                 }
             }
@@ -721,20 +984,15 @@
 
             for (let i = enemies.length - 1; i >= 0; i--) {
                 let en = enemies[i];
-                
                 en.x -= en.speed; 
                 
-                if (en.type === 'heli') {
-                    en.y += Math.sin(frameCount * 0.05) * 0.5;
-                }
+                if (en.type === 'heli') en.y += Math.sin(frameCount * 0.05) * 0.5;
 
                 if (en.x < player.x - 30) {
                     lives--;
                     createExplosion(player.x, player.y, 40); 
                     enemies.splice(i, 1);
-                    if (lives <= 0) {
-                        gameState = 'GAME_OVER';
-                    }
+                    if (lives <= 0) gameState = 'GAME_OVER';
                     continue;
                 }
 
@@ -745,21 +1003,18 @@
                     
                     if (dist < e.radius + Math.max(en.width, en.height) / 2) {
                         destroyed = true;
-                        
-                        let expSize = 20;
-                        if (en.type === 'tank') expSize = 35;
-                        if (en.type === 'mech') expSize = 45;
-                        if (en.type === 'heli') expSize = 30;
-                        if (en.type === 'bomber') expSize = 45;
+                        let expSize = 30;
+                        if (en.type === 'tank') expSize = 50;
+                        if (en.type === 'mech') expSize = 65;
+                        if (en.type === 'heli') expSize = 45;
+                        if (en.type === 'bomber') expSize = 65;
                         
                         createExplosion(en.x, hitY, expSize); 
                         break;
                     }
                 }
 
-                if (destroyed) {
-                    enemies.splice(i, 1);
-                }
+                if (destroyed) enemies.splice(i, 1);
             }
 
             for (let i = particles.length - 1; i >= 0; i--) {
@@ -773,7 +1028,6 @@
                     p.y = groundY;
                     p.vy *= -0.5;
                 }
-                
                 if (p.life <= 0) particles.splice(i, 1);
             }
         }
@@ -782,15 +1036,12 @@
             if (gameState === 'LOADING') {
                 ctx.fillStyle = theme.bg();
                 ctx.fillRect(0, 0, width, height);
-                
                 let cx = width / 2;
                 let cy = height / 2 - 40;
-                
                 ctx.save();
                 ctx.translate(cx, cy);
                 ctx.strokeStyle = theme.fg();
                 ctx.lineWidth = 2;
-                
                 ctx.beginPath();
                 ctx.arc(0, 0, 80, 0, Math.PI * 2);
                 ctx.stroke();
@@ -813,7 +1064,6 @@
                 ctx.textAlign = 'center';
                 ctx.font = '24px "Courier New"';
                 ctx.fillText('INITIALIZING', cx, cy + 120);
-                
                 return; 
             }
 
@@ -827,7 +1077,6 @@
             ctx.lineTo(width, groundY);
             ctx.stroke();
             
-            // Draw Radius Arc Limit for Machine Gun
             if (activeWeapon === 'MACHINE_GUN' && (gameState === 'PLAYING' || gameState === 'PAUSED')) {
                 ctx.save();
                 ctx.strokeStyle = theme.trail();
@@ -836,27 +1085,23 @@
                 ctx.beginPath();
                 let podX = player.x + 10;
                 let podY = player.y - 15;
-                let maxRange = width / 3;
-                ctx.arc(podX, podY, maxRange, Math.PI, 0); 
+                ctx.ellipse(podX, podY, width / 3, podY, 0, Math.PI, Math.PI * 2);
                 ctx.stroke();
                 ctx.restore();
             }
 
-            // Progress Bar
             let progress = Math.max(0, Math.min(1, (maxLevelBudget - levelBudget) / maxLevelBudget));
             ctx.fillStyle = theme.ground();
             ctx.fillRect(0, 0, width, 10);
             ctx.fillStyle = theme.fg();
             ctx.fillRect(0, 0, width * progress, 10);
 
-            // Health Bar (Top Left)
             if (gameState === 'PLAYING' || gameState === 'PAUSED') {
                 ctx.save();
                 ctx.translate(20, 25);
                 let hpBarWidth = 250;
                 let hpBarHeight = 18;
                 let segmentWidth = (hpBarWidth - (maxLives - 1) * 3) / maxLives;
-                
                 ctx.fillStyle = theme.healthEmpty();
                 for (let i = 0; i < maxLives; i++) {
                     ctx.fillRect(i * (segmentWidth + 3), 0, segmentWidth, hpBarHeight);
@@ -869,11 +1114,10 @@
                 ctx.restore();
             }
 
-            // Crosshair
             if (gameState === 'PLAYING' || gameState === 'PAUSED') {
-                ctx.strokeStyle = activeWeapon === 'LASER' ? theme.laser() : (activeWeapon === 'MACHINE_GUN' ? theme.mg() : theme.fg());
-                ctx.lineWidth = 2;
                 let chSize = 15;
+                ctx.strokeStyle = activeWeapon === 'LASER' ? theme.laser() : (activeWeapon === 'MACHINE_GUN' ? theme.mg() : (activeWeapon === 'SWARM' ? '#f00' : theme.fg()));
+                ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(mouse.x - chSize, mouse.y);
                 ctx.lineTo(mouse.x + chSize, mouse.y);
@@ -882,7 +1126,6 @@
                 ctx.stroke();
             }
 
-            // Draw Lasers
             for (let l of lasers) {
                 ctx.strokeStyle = theme.laser();
                 ctx.lineWidth = 15 * (l.timer / l.maxTimer); 
@@ -899,12 +1142,15 @@
                 ctx.stroke();
             }
             
-            // Draw MG Bullets
             for (let b of bullets) {
                 ctx.strokeStyle = theme.mg();
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.moveTo(b.lastX, b.lastY);
+                let len = 10;
+                let speed = Math.hypot(b.vx, b.vy);
+                let nx = b.vx / speed;
+                let ny = b.vy / speed;
+                ctx.moveTo(b.x - nx * len, b.y - ny * len);
                 ctx.lineTo(b.x, b.y);
                 ctx.stroke();
             }
@@ -912,7 +1158,6 @@
             ctx.save();
             ctx.translate(player.x, player.y);
 
-            // MLRS Base & Wheels
             ctx.fillStyle = theme.mlrsBase();
             ctx.fillRect(-50, -15, 100, 20); 
             ctx.fillRect(-50, -28, 25, 13); 
@@ -923,11 +1168,9 @@
                 ctx.fill();
             }
 
-            // Pod
             ctx.save();
             ctx.translate(10, -15); 
             let aimAngle = getPodAngle();
-            
             ctx.rotate(aimAngle);
             ctx.fillStyle = theme.mlrsPod();
             ctx.fillRect(-15, -15, 60, 30); 
@@ -947,60 +1190,74 @@
             }
             ctx.restore(); 
 
-            // Weapon & Reload UI Underneath Vehicle
             ctx.save();
-            ctx.translate(0, 35); 
+            ctx.translate(0, 50); 
             
-            let nextIsCluster = (shotsFired + 1) % 5 === 0;
+            let nextIsCluster = (shotsFired + 1) % 3 === 0;
             if (activeWeapon === 'MISSILE') {
                 if (nextIsCluster) {
-                    ctx.fillStyle = theme.fg();
-                    drawUIMissile(-16, 0, 8, 14);
-                    drawUIMissile(0, 0, 8, 14);
-                    drawUIMissile(16, 0, 8, 14);
+                    ctx.fillStyle = '#f00'; 
+                    drawUIMissile(-14, 0, 8, 20);
+                    drawUIMissile(0, 0, 8, 20);
+                    drawUIMissile(14, 0, 8, 20);
                 } else {
                     ctx.fillStyle = theme.trail();
-                    drawUIMissile(0, 0, 10, 18);
+                    drawUIMissile(0, 0, 10, 24);
                 }
+            } else if (activeWeapon === 'SWARM') {
+                ctx.fillStyle = '#f00';
+                drawUIMissile(-12, 0, 4, 15);
+                drawUIMissile(-4, -5, 4, 15);
+                drawUIMissile(4, -5, 4, 15);
+                drawUIMissile(12, 0, 4, 15);
             } else if (activeWeapon === 'LASER') {
                 if (nextIsCluster) {
                     ctx.fillStyle = theme.laser();
-                    ctx.fillRect(-15, -2, 30, 4);
-                    ctx.fillRect(-15, 4, 30, 4);
-                    ctx.fillRect(-15, 10, 30, 4);
+                    ctx.fillRect(-20, -4, 40, 6);
+                    ctx.fillRect(-20, 6, 40, 6);
+                    ctx.fillRect(-20, 16, 40, 6);
                 } else {
                     ctx.fillStyle = theme.laser();
-                    ctx.fillRect(-15, 2, 30, 8);
+                    ctx.fillRect(-20, 2, 40, 12);
                     ctx.fillStyle = '#fff';
-                    ctx.fillRect(-5, 4, 10, 4);
+                    ctx.fillRect(-8, 5, 16, 6);
                 }
             } else if (activeWeapon === 'MACHINE_GUN') {
                 ctx.fillStyle = theme.mg();
-                ctx.fillRect(-12, -2, 4, 12);
-                ctx.fillRect(-2, -2, 4, 12);
-                ctx.fillRect(8, -2, 4, 12);
-                
-                ctx.beginPath(); ctx.moveTo(-12, -2); ctx.lineTo(-10, -6); ctx.lineTo(-8, -2); ctx.fill();
-                ctx.beginPath(); ctx.moveTo(-2, -2); ctx.lineTo(0, -6); ctx.lineTo(2, -2); ctx.fill();
-                ctx.beginPath(); ctx.moveTo(8, -2); ctx.lineTo(10, -6); ctx.lineTo(12, -2); ctx.fill();
+                ctx.fillRect(-16, -4, 6, 16);
+                ctx.fillRect(-3, -4, 6, 16);
+                ctx.fillRect(10, -4, 6, 16);
+                ctx.beginPath(); ctx.moveTo(-16, -4); ctx.lineTo(-13, -10); ctx.lineTo(-10, -4); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(-3, -4); ctx.lineTo(0, -10); ctx.lineTo(3, -4); ctx.fill();
+                ctx.beginPath(); ctx.moveTo(10, -4); ctx.lineTo(13, -10); ctx.lineTo(16, -4); ctx.fill();
             }
 
-            ctx.translate(0, 20);
+            ctx.translate(0, 35); 
             ctx.fillStyle = theme.trail();
-            ctx.fillRect(-25, 0, 50, 4); 
+            ctx.fillRect(-35, 0, 70, 6); 
             
             if (fireCooldown > 0) {
                 ctx.fillStyle = activeWeapon === 'LASER' ? theme.laser() : (activeWeapon === 'MACHINE_GUN' ? theme.mg() : theme.fg());
-                let cooldownMax = activeWeapon === 'MACHINE_GUN' ? 6 : 45;
+                let cooldownMax = activeWeapon === 'MACHINE_GUN' ? 6 : (activeWeapon === 'LASER' ? 30 : 45);
                 let pct = 1 - (fireCooldown / cooldownMax);
-                ctx.fillRect(-25, 0, 50 * pct, 4);
+                ctx.fillRect(-35, 0, 70 * pct, 6);
             } else {
                 ctx.fillStyle = activeWeapon === 'LASER' ? theme.laser() : (activeWeapon === 'MACHINE_GUN' ? theme.mg() : theme.fg());
-                ctx.fillRect(-25, 0, 50, 4);
+                ctx.fillRect(-35, 0, 70, 6);
             }
+
+            if (gameMode === 'RVD' && swarmMissilesReady > 0 && activeWeapon !== 'SWARM') {
+                ctx.translate(0, 25); 
+                ctx.fillStyle = '#f00';
+                drawUIMissile(-9, 0, 3, 11);
+                drawUIMissile(-3, -4, 3, 11);
+                drawUIMissile(3, -4, 3, 11);
+                drawUIMissile(9, 0, 3, 11);
+            }
+
             ctx.restore();
 
-            if (activeWeapon === 'MISSILE' && shootingMode === 'CHARGE' && isCharging) {
+            if ((activeWeapon === 'MISSILE' || activeWeapon === 'SWARM') && shootingMode === 'CHARGE' && isCharging) {
                 ctx.strokeStyle = theme.fg();
                 ctx.strokeRect(-50, -60, 100, 8);
                 ctx.fillStyle = theme.fg();
@@ -1011,8 +1268,11 @@
             ctx.restore(); 
 
             for (let m of missiles) {
+                let isClust = m.isCluster || m.mode === 'CLUSTER_CHILD';
+                let isSwarm = m.isSwarmParent || m.mode === 'SWARM_CHILD';
+
                 if (m.path.length > 1) {
-                    ctx.strokeStyle = theme.trail(); 
+                    ctx.strokeStyle = isClust ? '#f00' : (isSwarm ? '#fff' : theme.trail()); 
                     ctx.lineWidth = m.isCluster ? 4 : 2; 
                     ctx.beginPath();
                     ctx.moveTo(m.path[0].x, m.path[0].y);
@@ -1021,14 +1281,46 @@
                     }
                     ctx.stroke();
                 }
-                ctx.fillStyle = theme.fg();
+                
+                ctx.save();
+                ctx.translate(m.x, m.y);
+                
+                let mAngle = 0;
+                if (m.mode === 'TARGET') {
+                    if (m.arcHeight > 0) {
+                        let t = 1 - (m.timer / m.initialTimer);
+                        let dx = m.targetX - m.startX;
+                        let dy = m.targetY - m.startY;
+                        let vx = dx;
+                        let vy = dy - m.arcHeight * Math.PI * Math.cos(t * Math.PI);
+                        mAngle = Math.atan2(vy, vx);
+                    } else {
+                        mAngle = Math.atan2(m.targetY - m.startY, m.targetX - m.startX);
+                    }
+                } else {
+                    mAngle = Math.atan2(m.vy, m.vx);
+                }
+                
+                ctx.rotate(mAngle);
+                
+                let size = (m.isCluster || m.isSwarmParent) ? 1.5 : (m.mode === 'SWARM_CHILD' ? 0.7 : 1);
+                
+                ctx.fillStyle = (isClust || isSwarm) ? '#f00' : theme.fg();
+                ctx.fillRect(-6 * size, -2 * size, 10 * size, 4 * size);
                 ctx.beginPath();
-                ctx.arc(m.x, m.y, m.isCluster ? 5 : 3, 0, Math.PI*2);
+                ctx.moveTo(4 * size, -2 * size);
+                ctx.lineTo(10 * size, 0);
+                ctx.lineTo(4 * size, 2 * size);
                 ctx.fill();
+                
+                ctx.fillStyle = theme.enemyDetail();
+                ctx.fillRect(-6 * size, -4 * size, 3 * size, 8 * size);
+                
+                ctx.restore();
             }
 
             for (let e of explosions) {
-                ctx.fillStyle = Math.random() > 0.5 ? theme.fg() : theme.trail(); 
+                ctx.fillStyle = e.color ? e.color : (Math.random() > 0.5 ? theme.fg() : theme.trail()); 
                 ctx.beginPath();
                 ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
                 ctx.fill();
@@ -1042,15 +1334,34 @@
                     ctx.fillStyle = theme.enemyDetail();
                     ctx.fillRect(en.x - 21, en.y - 15, 9, 6);
                     ctx.fillRect(en.x + 12, en.y - 15, 9, 6);
+                    
+                    if (gameMode === 'RVD') {
+                        ctx.fillStyle = '#f00';
+                        ctx.fillRect(en.x - 14, en.y - 3, 8, 6);
+                    }
                 
                 } else if (en.type === 'infantry') {
-                    ctx.fillRect(en.x - 7.5, en.y - 36, 15, 36);
-                    ctx.fillStyle = theme.fg();
-                    if (Math.floor(frameCount / 10) % 2 === 0 && gameState !== 'PAUSED') {
-                        ctx.fillRect(en.x - 6, en.y, 4.5, 9);
-                        ctx.fillRect(en.x + 1.5, en.y, 4.5, 9);
+                    if (gameMode === 'RVD') {
+                        ctx.fillStyle = theme.enemyDetail();
+                        ctx.fillRect(en.x - 10, en.y - 36, 20, 22); 
+                        ctx.fillStyle = theme.fg();
+                        if (Math.floor(frameCount / 10) % 2 === 0 && gameState !== 'PAUSED') {
+                            ctx.fillRect(en.x - 8, en.y - 14, 6, 14);
+                            ctx.fillRect(en.x + 2, en.y - 14, 6, 14);
+                        } else {
+                            ctx.fillRect(en.x - 3, en.y - 14, 6, 14);
+                        }
+                        ctx.fillStyle = '#f00'; 
+                        ctx.fillRect(en.x - 6, en.y - 30, 12, 4);
                     } else {
-                        ctx.fillRect(en.x - 1.5, en.y, 4.5, 9);
+                        ctx.fillRect(en.x - 7.5, en.y - 36, 15, 36);
+                        ctx.fillStyle = theme.fg();
+                        if (Math.floor(frameCount / 10) % 2 === 0 && gameState !== 'PAUSED') {
+                            ctx.fillRect(en.x - 6, en.y, 4.5, 9);
+                            ctx.fillRect(en.x + 1.5, en.y, 4.5, 9);
+                        } else {
+                            ctx.fillRect(en.x - 1.5, en.y, 4.5, 9);
+                        }
                     }
                 } else if (en.type === 'tank') {
                     ctx.fillRect(en.x - 27, en.y - 18, 54, 18);
@@ -1104,6 +1415,20 @@
                     ctx.fillStyle = theme.enemyDetail();
                     ctx.fillRect(en.x - 27, en.y - 3, 9, 6);
                 }
+
+                if (en.isTargeted) {
+                    let hitY = (['tank', 'infantry', 'mech'].includes(en.type)) ? en.y - en.height/2 : en.y;
+                    let extX = en.width/2 + 5;
+                    let extY = en.height/2 + 5;
+                    ctx.strokeStyle = '#f00';
+                    ctx.lineWidth = 2;
+                    let c = 8;
+                    
+                    ctx.beginPath(); ctx.moveTo(en.x - extX, hitY - extY + c); ctx.lineTo(en.x - extX, hitY - extY); ctx.lineTo(en.x - extX + c, hitY - extY); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(en.x + extX - c, hitY - extY); ctx.lineTo(en.x + extX, hitY - extY); ctx.lineTo(en.x + extX, hitY - extY + c); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(en.x - extX, hitY + extY - c); ctx.lineTo(en.x - extX, hitY + extY); ctx.lineTo(en.x - extX + c, hitY + extY); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(en.x + extX - c, hitY + extY); ctx.lineTo(en.x + extX, hitY + extY); ctx.lineTo(en.x + extX, hitY + extY - c); ctx.stroke();
+                }
             }
 
             for (let p of particles) {
@@ -1111,13 +1436,15 @@
                 ctx.fillRect(p.x, p.y, 2, 2);
             }
 
-            // Top Middle Level Indicator
             ctx.fillStyle = theme.fg();
             ctx.font = '36px "Courier New"';
             ctx.textAlign = 'center';
-            ctx.fillText(`LEVEL: ${level}/10`, width / 2, 45);
+            if (gameMode === 'MAIN') {
+                ctx.fillText(`LEVEL: ${level}/10`, width / 2, 45);
+            } else {
+                ctx.fillText(`ENDLESS WAVE: ${level}`, width / 2, 45);
+            }
 
-            // Fade out controls
             let controlsAlpha = 1.0;
             if (gameState === 'PLAYING' && !isIntermission) {
                 if (levelFrames > 180) { 
@@ -1129,17 +1456,24 @@
                 controlsAlpha = 0.0;
             }
 
-            if (controlsAlpha > 0) {
+            if (controlsAlpha > 0 && gameState !== 'START_MENU') {
                 ctx.save();
                 ctx.globalAlpha = controlsAlpha;
                 ctx.fillStyle = theme.fg();
                 ctx.font = '14px "Courier New"';
                 ctx.textAlign = 'right';
                 ctx.fillText(`[T] Theme: ${isDark ? 'DARK' : 'LIGHT'}`, width - 20, 65);
-                ctx.fillText(`[1-3] or [Q] Weapon: ${activeWeapon.replace('_', ' ')}`, width - 20, 85);
-                if (activeWeapon === 'MISSILE') ctx.fillText(`[M] Mode: ${shootingMode}`, width - 20, 105);
-                ctx.fillText(`[P] Pause`, width - 20, activeWeapon === 'MISSILE' ? 125 : 105);
-                ctx.fillText(`[ESC] Abort to Menu`, width - 20, activeWeapon === 'MISSILE' ? 145 : 125);
+                if (gameMode === 'MAIN') {
+                    ctx.fillText(`[1-3] or [Q] Weapon: ${activeWeapon.replace('_', ' ')}`, width - 20, 85);
+                } else {
+                    ctx.fillStyle = activeWeapon === 'SWARM' ? '#f00' : theme.fg();
+                    ctx.fillText(`Weapon: ${activeWeapon === 'SWARM' ? 'SWARM ROCKET' : 'STANDARD ROCKET'}`, width - 20, 85);
+                    ctx.fillStyle = theme.fg();
+                    ctx.fillText(`[Q] Equip Swarm: ${swarmMissilesReady > 0 ? 'YES' : 'NO'}`, width - 20, 105);
+                    ctx.fillText(`[M] Mode: ${shootingMode}`, width - 20, 125);
+                }
+                ctx.fillText(`[P] Pause`, width - 20, gameMode === 'MAIN' ? 105 : 145);
+                ctx.fillText(`[ESC] Abort to Menu`, width - 20, gameMode === 'MAIN' ? 125 : 165);
                 ctx.restore();
             }
 
@@ -1149,19 +1483,77 @@
                 ctx.fillStyle = theme.fg();
                 ctx.textAlign = 'center';
                 ctx.font = '50px "Courier New"';
-                ctx.fillText('MISSILE STRIKE', width / 2, height / 2 - 70);
+                ctx.fillText('MISSILE STRIKE', width / 2, height / 2 - 120);
                 
                 ctx.font = '20px "Courier New"';
                 ctx.fillStyle = theme.trail();
-                ctx.fillText(`Protect the MLRS from advancing ground and air units.`, width / 2, height / 2 - 10);
-                ctx.fillText(`[1-3] cycles Weapons: MISSILE, LASER, MG (Radius based).`, width / 2, height / 2 + 20);
-                ctx.fillText(`Every 5th Missile/Laser shot fires a Cluster/Tri-beam.`, width / 2, height / 2 + 50);
+                ctx.fillText(`Protect the line from advancing ground and air units.`, width / 2, height / 2 - 70);
                 
-                ctx.fillStyle = theme.fg();
-                ctx.fillText(`STARTING LEVEL: ${selectedStartLevel}  (Press 1-9, 0 to change)`, width / 2, height / 2 + 100);
+                let layout = getMenuLayout();
 
+                ctx.fillStyle = theme.fg();
+                ctx.font = '14px "Courier New"';
+                ctx.textAlign = 'left';
+                let ctrlX = layout.startX + layout.totalW + 80; 
+                let ctrlY = layout.startY + 15;
+                ctx.fillText(`[1-3] or [Q] Weapon: Missile, Laser, Gun`, ctrlX, ctrlY);
+                ctx.fillText(`[M] Mode: Toggle Target/Charge (RVD Only)`, ctrlX, ctrlY + 25);
+                ctx.fillText(`[T] Theme: ${isDark ? 'DARK' : 'LIGHT'}`, ctrlX, ctrlY + 50);
+                ctx.fillText(`[P] Pause`, ctrlX, ctrlY + 75);
+                ctx.fillText(`[ESC] Abort to Menu`, ctrlX, ctrlY + 100);
+
+                ctx.font = '20px "Courier New"';
+                ctx.textAlign = 'center';
+                let isAnyHovered = false;
+                
+                for (let i = 0; i < 10; i++) {
+                    let row = Math.floor(i / 5);
+                    let col = i % 5;
+                    let bx = layout.startX + col * (layout.bw + layout.gap);
+                    let by = layout.startY + row * (layout.bh + layout.gap);
+                    
+                    let isHover = (mouse.x >= bx && mouse.x <= bx + layout.bw && mouse.y >= by && mouse.y <= by + layout.bh);
+                    if (isHover) isAnyHovered = true;
+                    
+                    if (menuSelectedMode === 'MAIN' && selectedStartLevel === i + 1) {
+                        ctx.fillStyle = theme.fg();
+                        ctx.fillRect(bx, by, layout.bw, layout.bh);
+                        ctx.fillStyle = theme.bg();
+                    } else if (isHover) {
+                        ctx.fillStyle = theme.trail();
+                        ctx.fillRect(bx, by, layout.bw, layout.bh);
+                        ctx.fillStyle = theme.bg();
+                    } else {
+                        ctx.strokeStyle = theme.trail();
+                        ctx.strokeRect(bx, by, layout.bw, layout.bh);
+                        ctx.fillStyle = theme.trail();
+                    }
+                    ctx.fillText(`L-${i + 1}`, bx + layout.bw / 2, by + layout.bh / 2 + 6);
+                }
+
+                let isRvdHover = (mouse.x >= layout.startX && mouse.x <= layout.startX + layout.totalW && mouse.y >= layout.rvdY && mouse.y <= layout.rvdY + layout.bh);
+                if (isRvdHover) isAnyHovered = true;
+                
+                if (menuSelectedMode === 'RVD') {
+                    ctx.fillStyle = theme.fg();
+                    ctx.fillRect(layout.startX, layout.rvdY, layout.totalW, layout.bh);
+                    ctx.fillStyle = theme.bg();
+                } else if (isRvdHover) {
+                    ctx.fillStyle = theme.trail();
+                    ctx.fillRect(layout.startX, layout.rvdY, layout.totalW, layout.bh);
+                    ctx.fillStyle = theme.bg();
+                } else {
+                    ctx.strokeStyle = theme.trail();
+                    ctx.strokeRect(layout.startX, layout.rvdY, layout.totalW, layout.bh);
+                    ctx.fillStyle = theme.trail();
+                }
+                
+                let cursor = (menuSelectedMode === 'RVD' && Math.floor(Date.now() / 500) % 2 === 0) ? '_' : '';
+                ctx.fillText(`ROCKETS VS DRONES [WAVE: ${rvdStartWaveStr}${cursor}]`, layout.startX + layout.totalW / 2, layout.rvdY + layout.bh / 2 + 6);
+
+                ctx.fillStyle = theme.fg();
                 if (Math.floor(Date.now() / 500) % 2 === 0) {
-                    ctx.fillText('CLICK TO INITIATE MISSION', width / 2, height / 2 + 150);
+                    ctx.fillText('PRESS [SPACE] OR [ENTER] TO LAUNCH', width / 2, layout.rvdY + layout.bh + 50);
                 }
             } else if (gameState === 'PAUSED') {
                 ctx.fillStyle = theme.overlay();
@@ -1212,6 +1604,7 @@
         }
 
         function gameLoop() {
+            updateCursor();
             update();
             draw();
             requestAnimationFrame(gameLoop);
