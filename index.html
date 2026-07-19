@@ -44,6 +44,47 @@
                     output[i] = Math.random() * 2 - 1;
                 }
             },
+            playInitTick() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(2000, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.02, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.05);
+            },
+            playMenuClick() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            },
+            playGameStart() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, this.ctx.currentTime + 0.4);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.4);
+            },
             playMG() {
                 if (!this.ctx) return;
                 const osc = this.ctx.createOscillator();
@@ -117,37 +158,18 @@
             },
             playSwarmLaunch() {
                 if (!this.ctx) return;
-                
-                // Deep initial boom/rumble
                 const osc = this.ctx.createOscillator();
                 const gain = this.ctx.createGain();
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(60, this.ctx.currentTime);
-                osc.frequency.linearRampToValueAtTime(30, this.ctx.currentTime + 1.5);
-                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 1.5);
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(150, this.ctx.currentTime + 0.25);
+                gain.gain.setValueAtTime(0.06, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
                 
-                // Heavy noise thrust
-                const noiseSrc = this.ctx.createBufferSource();
-                noiseSrc.buffer = this.noiseBuffer;
-                const noiseFilter = this.ctx.createBiquadFilter();
-                noiseFilter.type = 'lowpass';
-                noiseFilter.frequency.setValueAtTime(800, this.ctx.currentTime);
-                noiseFilter.frequency.linearRampToValueAtTime(100, this.ctx.currentTime + 1.5);
-                const noiseGain = this.ctx.createGain();
-                noiseGain.gain.setValueAtTime(0.5, this.ctx.currentTime);
-                noiseGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 1.5);
-                
-                noiseSrc.connect(noiseFilter);
-                noiseFilter.connect(noiseGain);
-                noiseGain.connect(this.ctx.destination);
-
                 osc.connect(gain);
                 gain.connect(this.ctx.destination);
                 osc.start();
-                noiseSrc.start();
-                osc.stop(this.ctx.currentTime + 1.5);
-                noiseSrc.stop(this.ctx.currentTime + 1.5);
+                osc.stop(this.ctx.currentTime + 0.25);
             },
             playHoming() {
                 if (!this.ctx) return;
@@ -417,7 +439,8 @@
 
                 if (e.code === 'Space' || e.code === 'Enter') {
                     gameMode = menuSelectedMode;
-                    shootingMode = gameMode === 'MAIN' ? 'TARGET' : 'CHARGE'; 
+                    sfx.playGameStart();
+                    shootingMode = 'TARGET'; 
                     resetGame();
                     let startLvl = 1;
                     if (gameMode === 'MAIN') {
@@ -501,6 +524,7 @@
                         selectedStartLevel = i + 1;
                         menuSelectedMode = 'MAIN';
                         clickedBox = true;
+                        sfx.playMenuClick();
                         break;
                     }
                 }
@@ -509,6 +533,7 @@
                 if (!clickedBox && mouse.x >= layout.startX && mouse.x <= layout.startX + layout.totalW && mouse.y >= layout.rvdY && mouse.y <= layout.rvdY + layout.bh) {
                     menuSelectedMode = 'RVD';
                     clickedBox = true;
+                    sfx.playMenuClick();
                 }
                 
                 return;
@@ -545,7 +570,7 @@
                     chargeLevel = 5; 
                 } else if (shootingMode === 'TARGET') {
                     fireMissileTargetMode();
-                    fireCooldown = 45;
+                    fireCooldown = 22; 
                 }
             }
         });
@@ -556,7 +581,7 @@
                 fireMissileChargeMode();
                 isCharging = false;
                 chargeLevel = 0;
-                fireCooldown = 45; 
+                fireCooldown = 22; 
             }
         });
 
@@ -565,16 +590,16 @@
             activeWeapon = 'MISSILE';
             sfx.playTripleMissile();
             
-            let topY = 110;
-            let bottomY = groundY - 100;
-            let stepY = (bottomY - topY) / 4;
+            let topLimit = 110;
+            let bottomLimit = groundY - 100;
+            let midY = (topLimit + bottomLimit) / 2;
+            let topY = midY - 90; 
+            let bottomY = midY + 90; 
             let offsetX = 80;
             
-            friendlyDrones.push({ x: -50 - offsetX * 2, y: topY, vx: 5, fireTimer: 20 }); 
-            friendlyDrones.push({ x: -50 - offsetX, y: topY + stepY, vx: 5, fireTimer: 30 }); 
-            friendlyDrones.push({ x: -50, y: topY + stepY * 2, vx: 5, fireTimer: 40 }); // Middle (Front)
-            friendlyDrones.push({ x: -50 - offsetX, y: topY + stepY * 3, vx: 5, fireTimer: 30 }); 
-            friendlyDrones.push({ x: -50 - offsetX * 2, y: bottomY, vx: 5, fireTimer: 20 }); 
+            friendlyDrones.push({ x: -50 - offsetX, y: topY, vx: 5, fireTimer: 20, formationOffsetX: -offsetX }); 
+            friendlyDrones.push({ x: -50, y: midY, vx: 5, fireTimer: 40, formationOffsetX: 0 }); 
+            friendlyDrones.push({ x: -50 - offsetX, y: bottomY, vx: 5, fireTimer: 20, formationOffsetX: -offsetX }); 
         }
 
         function getDistanceToLineSegment(px, py, x1, y1, x2, y2) {
@@ -602,8 +627,7 @@
             let dy = targetY - startY;
             let dist = Math.hypot(dx, dy);
             
-            let isAirShot = gameMode === 'MAIN' && targetY < groundY - 80;
-            let arcHeight = isAirShot ? 0 : dist * 0.08; 
+            let arcHeight = dist * 0.08; 
             
             let initialDy = dy - arcHeight * Math.PI; 
             let aimAngle = Math.atan2(initialDy, dx);
@@ -750,7 +774,7 @@
             let vy = Math.sin(aimAngle) * velocity;
             
             let targetY = Math.min(mouse.y, groundY);
-            let gravity = (gameMode === 'RVD' || targetY >= groundY - 80) ? 0.25 : 0;
+            let gravity = 0.25;
 
             let splitTime = -1;
             if (isSwarm || isCluster) {
@@ -939,6 +963,7 @@
         function update() {
             if (gameState === 'LOADING') {
                 loadTimer++;
+                if (loadTimer % 15 === 0) sfx.playInitTick();
                 if (loadTimer >= loadDuration) gameState = 'START_MENU';
                 return;
             }
@@ -1048,26 +1073,55 @@
 
             for (let en of enemies) en.isTargeted = false;
 
+            // Track currently targeted enemies by friendly missiles to avoid over-firing
+            let fleetTargetedEnemies = new Set();
+            for (let m of missiles) {
+                if (m.mode === 'FRIENDLY_MISSILE' && m.targetObj) {
+                    fleetTargetedEnemies.add(m.targetObj);
+                }
+            }
+
             for(let i = friendlyDrones.length - 1; i >= 0; i--) {
                 let fd = friendlyDrones[i];
+                
+                // Drones continuously move across the screen
                 fd.x += fd.vx;
+
                 fd.fireTimer--;
                 if (fd.fireTimer <= 0) {
-                    if (enemies.length > 0) {
+                    let untargetedEnemies = enemies.filter(en => !fleetTargetedEnemies.has(en));
+                    
+                    if (untargetedEnemies.length > 0) {
                         fd.fireTimer = 40 + Math.random() * 40;
-                        let target = enemies[Math.floor(Math.random() * enemies.length)];
-                        missiles.push({
-                            mode: 'FRIENDLY_MISSILE',
-                            x: fd.x, y: fd.y + 10,
-                            vx: 0, vy: 5, g: 0, 
-                            path: [], 
-                            targetObj: target,
-                            speed: 8, 
-                            age: 0,
-                            isBlue: true 
-                        });
+                        
+                        let target = null;
+                        let minDist = Infinity;
+                        
+                        // Find the nearest untargeted enemy
+                        for (let en of untargetedEnemies) {
+                            let hitY = (['tank', 'infantry', 'mech'].includes(en.type)) ? en.y - en.height/2 : en.y;
+                            let dist = Math.hypot(en.x - fd.x, hitY - fd.y);
+                            if (dist < minDist) {
+                                minDist = dist;
+                                target = en;
+                            }
+                        }
+                        
+                        if (target) {
+                            fleetTargetedEnemies.add(target);
+                            missiles.push({
+                                mode: 'FRIENDLY_MISSILE',
+                                x: fd.x, y: fd.y + 10,
+                                vx: 0, vy: 5, g: 0, 
+                                path: [], 
+                                targetObj: target,
+                                speed: 8, 
+                                age: 0,
+                                isBlue: true 
+                            });
+                        }
                     } else {
-                        fd.fireTimer = 10; 
+                        fd.fireTimer = 10; // Check again shortly if there are no free targets
                     }
                 }
                 if (fd.x > width + 100) friendlyDrones.splice(i, 1);
@@ -1116,7 +1170,33 @@
                         m.vy = Math.sin(currentAngle) * m.speed;
                     } else {
                         if (enemies.length > 0) {
-                            m.targetObj = enemies[Math.floor(Math.random() * enemies.length)];
+                            let target = null;
+                            let minDist = Infinity;
+                            
+                            let candidateEnemies = enemies;
+                            if (m.mode === 'FRIENDLY_MISSILE') {
+                                let currentTargets = new Set();
+                                for (let mx of missiles) {
+                                    if (mx.mode === 'FRIENDLY_MISSILE' && mx !== m && mx.targetObj) {
+                                        currentTargets.add(mx.targetObj);
+                                    }
+                                }
+                                let untargeted = enemies.filter(e => !currentTargets.has(e));
+                                if (untargeted.length > 0) {
+                                    candidateEnemies = untargeted;
+                                }
+                            }
+                            
+                            // Target the nearest available enemy when retargeting
+                            for (let en of candidateEnemies) {
+                                let hitY = (['tank', 'infantry', 'mech'].includes(en.type)) ? en.y - en.height/2 : en.y;
+                                let dist = Math.hypot(en.x - m.x, hitY - m.y);
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    target = en;
+                                }
+                            }
+                            m.targetObj = target;
                         }
                     }
                     m.x += m.vx;
@@ -1201,10 +1281,9 @@
                                 let cDy = childTargetY - m.y;
                                 let childVx = cDx / childTimer;
                                 
-                                let isAirShot = gameMode === 'MAIN' && childTargetY < groundY - 80;
-                                let childArcHeight = isAirShot ? 0 : Math.hypot(cDx, cDy) * 0.08;
+                                let childArcHeight = Math.hypot(cDx, cDy) * 0.08;
                                 
-                                let g = isAirShot ? 0 : 0.25;
+                                let g = 0.25;
                                 let childVy = (cDy - 0.5 * g * Math.pow(childTimer, 2)) / childTimer;
 
                                 missiles.push({
@@ -1260,8 +1339,11 @@
                         for (let en of enemies) {
                             let hitY = (['tank', 'infantry', 'mech'].includes(en.type)) ? en.y - en.height/2 : en.y;
                             let dist = Math.hypot(m.x - en.x, m.y - hitY);
-                            if (dist < 45) { 
+                            let prox = (m.mode === 'CHARGE') ? 45 : 15;
+                            if (dist < prox) {
                                 detonated = true;
+                                m.x = en.x; 
+                                m.y = hitY;
                                 break; 
                             }
                         }
@@ -1552,10 +1634,6 @@
                 drawUIMissile(-4, -5, 4, 15);
                 drawUIMissile(4, -5, 4, 15);
                 drawUIMissile(12, 0, 4, 15);
-            } else if (activeWeapon === 'FLEET') {
-                ctx.fillStyle = '#0af';
-                ctx.fillRect(-15, -4, 30, 8);
-                ctx.fillRect(-10, -8, 20, 16);
             } else if (activeWeapon === 'LASER') {
                 if (nextIsCluster) {
                     ctx.fillStyle = theme.laser();
@@ -1584,7 +1662,7 @@
             
             if (fireCooldown > 0) {
                 ctx.fillStyle = activeWeapon === 'LASER' ? theme.laser() : (activeWeapon === 'MACHINE_GUN' ? theme.mg() : theme.fg());
-                let cooldownMax = activeWeapon === 'MACHINE_GUN' ? 6 : (activeWeapon === 'LASER' ? 30 : 45);
+                let cooldownMax = activeWeapon === 'MACHINE_GUN' ? 6 : (activeWeapon === 'LASER' ? 30 : 22);
                 if (activeWeapon === 'FLEET') cooldownMax = 60;
                 let pct = 1 - (fireCooldown / cooldownMax);
                 ctx.fillRect(-35, 0, 70 * pct, 6);
@@ -1601,12 +1679,6 @@
                     drawUIMissile(-3, -4, 3, 11);
                     drawUIMissile(3, -4, 3, 11);
                     drawUIMissile(9, 0, 3, 11);
-                }
-                if (fleetReady > 0 && activeWeapon !== 'FLEET') {
-                    ctx.fillStyle = '#0af';
-                    let fleetOffsetX = (swarmMissilesReady > 0 && activeWeapon !== 'SWARM') ? 20 : 0;
-                    ctx.fillRect(fleetOffsetX - 8, -2, 16, 4);
-                    ctx.fillRect(fleetOffsetX - 4, -5, 8, 10);
                 }
             }
 
@@ -1625,6 +1697,7 @@
             for (let fd of friendlyDrones) {
                 ctx.save();
                 ctx.translate(fd.x, fd.y);
+                ctx.scale(0.6, 0.6); 
                 ctx.fillStyle = theme.enemy();
                 ctx.fillRect(-18, -9, 36, 18);
                 ctx.fillStyle = theme.enemyDetail();
@@ -1740,8 +1813,7 @@
                         ctx.fillRect(en.x - 12, en.y + 6, 9, 24);
                         ctx.fillRect(en.x + 3, en.y + 6, 9, 24);
                     }
-                    ctx.fillStyle = theme.laser(); 
-                    ctx.fillRect(en.x - 12, en.y - 18, 18, 6);
+                    
                     ctx.strokeStyle = theme.enemy();
                     ctx.lineWidth = 6;
                     ctx.beginPath();
@@ -1764,7 +1836,7 @@
                         ctx.fillRect(en.x - 18, en.y - 18, 36, 3);
                     }
                     ctx.fillStyle = '#f00';
-                    ctx.fillRect(en.x + 33, en.y - 9, 3, 12);
+                    ctx.fillRect(en.x - 15, en.y - 6, 8, 8);
                 } else if (en.type === 'bomber') {
                     ctx.beginPath();
                     ctx.moveTo(en.x - 30, en.y - 13); 
@@ -1812,39 +1884,6 @@
                 }
             }
 
-            let controlsAlpha = 1.0;
-            if (gameState === 'PLAYING' && !isIntermission) {
-                if (levelFrames > 180) { 
-                    controlsAlpha = Math.max(0, 1.0 - (levelFrames - 180) / 60);
-                }
-            } else if (gameState === 'PAUSED' || gameState === 'START_MENU') {
-                controlsAlpha = 1.0;
-            } else if (isIntermission || gameState === 'GAME_OVER' || gameState === 'GAME_CLEARED') {
-                controlsAlpha = 0.0;
-            }
-
-            if (controlsAlpha > 0 && gameState !== 'START_MENU') {
-                ctx.save();
-                ctx.globalAlpha = controlsAlpha;
-                ctx.fillStyle = theme.fg();
-                ctx.font = '14px "Courier New"';
-                ctx.textAlign = 'right';
-                ctx.fillText(`[T] Theme: ${isDark ? 'DARK' : 'LIGHT'}`, width - 20, 65);
-                if (gameMode === 'MAIN') {
-                    ctx.fillText(`[1-3] or [Q] Weapon: ${activeWeapon.replace('_', ' ')}`, width - 20, 85);
-                } else {
-                    let wStr = activeWeapon === 'SWARM' ? 'SWARM ROCKET' : (activeWeapon === 'FLEET' ? 'DRONE FLEET' : 'STANDARD ROCKET');
-                    ctx.fillStyle = activeWeapon === 'SWARM' ? '#f00' : (activeWeapon === 'FLEET' ? '#0af' : theme.fg());
-                    ctx.fillText(`Weapon: ${wStr}`, width - 20, 85);
-                    ctx.fillStyle = theme.fg();
-                    ctx.fillText(`[Q] Equip Weapon - Swarm: ${swarmMissilesReady>0?'YES':'NO'} | Fleet: ${fleetReady>0?'YES':'NO'}`, width - 20, 105);
-                    ctx.fillText(`[M] Mode: ${shootingMode}`, width - 20, 125);
-                }
-                ctx.fillText(`[P] Pause`, width - 20, gameMode === 'MAIN' ? 105 : 145);
-                ctx.fillText(`[ESC] Abort to Menu`, width - 20, gameMode === 'MAIN' ? 125 : 165);
-                ctx.restore();
-            }
-
             if (gameState === 'START_MENU') {
                 ctx.fillStyle = theme.overlay();
                 ctx.fillRect(0, 0, width, height);
@@ -1858,17 +1897,6 @@
                 ctx.fillText(`Protect the line from advancing ground and air units.`, width / 2, height / 2 - 70);
                 
                 let layout = getMenuLayout();
-
-                ctx.fillStyle = theme.fg();
-                ctx.font = '14px "Courier New"';
-                ctx.textAlign = 'left';
-                let ctrlX = layout.startX + layout.totalW + 80; 
-                let ctrlY = layout.startY + 15;
-                ctx.fillText(`[1-3] or [Q] Weapon: Missile, Laser, Gun`, ctrlX, ctrlY);
-                ctx.fillText(`[M] Mode: Toggle Target/Charge (RVD Only)`, ctrlX, ctrlY + 25);
-                ctx.fillText(`[T] Theme: ${isDark ? 'DARK' : 'LIGHT'}`, ctrlX, ctrlY + 50);
-                ctx.fillText(`[P] Pause`, ctrlX, ctrlY + 75);
-                ctx.fillText(`[ESC] Abort to Menu`, ctrlX, ctrlY + 100);
 
                 ctx.font = '20px "Courier New"';
                 ctx.textAlign = 'center';
