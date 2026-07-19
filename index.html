@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Missile Strike</title>
-    <!-- Radar Favicon -->
+    <!-- Rocket Favicon -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 10 Q70 30 65 70 L80 90 L50 80 L20 90 L35 70 Q30 30 50 10 Z' fill='red'/></svg>">
     <style>
         body, html {
@@ -28,6 +28,220 @@
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+
+        // Web Audio API Synthesizer System
+        const sfx = {
+            ctx: null,
+            noiseBuffer: null,
+            init() {
+                if (this.ctx) return;
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                const bufferSize = this.ctx.sampleRate;
+                this.noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const output = this.noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = Math.random() * 2 - 1;
+                }
+            },
+            playMG() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(80, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            },
+            playLaser() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(900, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(300, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            },
+            playMissile() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(80, this.ctx.currentTime + 0.4);
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+                
+                const noiseSrc = this.ctx.createBufferSource();
+                noiseSrc.buffer = this.noiseBuffer;
+                const noiseGain = this.ctx.createGain();
+                noiseGain.gain.setValueAtTime(0.03, this.ctx.currentTime);
+                noiseGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                noiseSrc.connect(noiseGain);
+                noiseGain.connect(this.ctx.destination);
+                
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                noiseSrc.start();
+                osc.stop(this.ctx.currentTime + 0.4);
+                noiseSrc.stop(this.ctx.currentTime + 0.3);
+            },
+            playTripleMissile() {
+                if (!this.ctx) return;
+                for (let i = 0; i < 3; i++) {
+                    setTimeout(() => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(500, this.ctx.currentTime);
+                        osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.3);
+                        gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+                        osc.start();
+                        osc.stop(this.ctx.currentTime + 0.3);
+                    }, i * 60);
+                }
+            },
+            playSwarmLaunch() {
+                if (!this.ctx) return;
+                
+                // Deep initial boom/rumble
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(60, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(30, this.ctx.currentTime + 1.5);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 1.5);
+                
+                // Heavy noise thrust
+                const noiseSrc = this.ctx.createBufferSource();
+                noiseSrc.buffer = this.noiseBuffer;
+                const noiseFilter = this.ctx.createBiquadFilter();
+                noiseFilter.type = 'lowpass';
+                noiseFilter.frequency.setValueAtTime(800, this.ctx.currentTime);
+                noiseFilter.frequency.linearRampToValueAtTime(100, this.ctx.currentTime + 1.5);
+                const noiseGain = this.ctx.createGain();
+                noiseGain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+                noiseGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 1.5);
+                
+                noiseSrc.connect(noiseFilter);
+                noiseFilter.connect(noiseGain);
+                noiseGain.connect(this.ctx.destination);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                noiseSrc.start();
+                osc.stop(this.ctx.currentTime + 1.5);
+                noiseSrc.stop(this.ctx.currentTime + 1.5);
+            },
+            playHoming() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(1600, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.015, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.05);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.05);
+            },
+            playExplosion(size) {
+                if (!this.ctx) return;
+                const dur = Math.min(0.6, size / 60); 
+                
+                const noiseSrc = this.ctx.createBufferSource();
+                noiseSrc.buffer = this.noiseBuffer;
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(1000 - Math.min(800, size * 10), this.ctx.currentTime);
+                
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + dur);
+                
+                noiseSrc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+                noiseSrc.start();
+                noiseSrc.stop(this.ctx.currentTime + dur);
+                
+                const osc = this.ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(120 - Math.min(80, size), this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime + dur);
+                const oscGain = this.ctx.createGain();
+                oscGain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                oscGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + dur);
+                osc.connect(oscGain);
+                oscGain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + dur);
+            },
+            playAlert() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(600, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.2);
+            },
+            playLevelUp() {
+                 if (!this.ctx) return;
+                 const freqs = [300, 400, 500, 600];
+                 freqs.forEach((f, i) => {
+                     const osc = this.ctx.createOscillator();
+                     const gain = this.ctx.createGain();
+                     osc.type = 'sine';
+                     osc.frequency.value = f;
+                     gain.gain.setValueAtTime(0, this.ctx.currentTime + i * 0.1);
+                     gain.gain.linearRampToValueAtTime(0.1, this.ctx.currentTime + i * 0.1 + 0.05);
+                     gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + i * 0.1 + 0.1);
+                     osc.connect(gain);
+                     gain.connect(this.ctx.destination);
+                     osc.start(this.ctx.currentTime + i * 0.1);
+                     osc.stop(this.ctx.currentTime + i * 0.1 + 0.1);
+                 });
+            },
+            playGameOver() {
+                if (!this.ctx) return;
+                 const freqs = [300, 250, 200, 150];
+                 freqs.forEach((f, i) => {
+                     const osc = this.ctx.createOscillator();
+                     const gain = this.ctx.createGain();
+                     osc.type = 'sawtooth';
+                     osc.frequency.value = f;
+                     gain.gain.setValueAtTime(0, this.ctx.currentTime + i * 0.2);
+                     gain.gain.linearRampToValueAtTime(0.1, this.ctx.currentTime + i * 0.2 + 0.1);
+                     gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + i * 0.2 + 0.2);
+                     osc.connect(gain);
+                     gain.connect(this.ctx.destination);
+                     osc.start(this.ctx.currentTime + i * 0.2);
+                     osc.stop(this.ctx.currentTime + i * 0.2 + 0.2);
+                 });
+            }
+        };
 
         // Theme System
         let isDark = true;
@@ -55,7 +269,7 @@
         function resize() {
             width = canvas.width = window.innerWidth;
             height = canvas.height = window.innerHeight;
-            groundY = height - 150; // Ground line raised
+            groundY = height - 150; 
             if (player) {
                 player.x = 120;
                 player.y = groundY - 18;
@@ -63,7 +277,7 @@
         }
         window.addEventListener('resize', resize);
 
-        // Expanded Level Configuration (Main Game)
+        // Expanded Level Configuration
         const levelData = {
             1: { totalScore: 15,  rates: {inf: 160, tank: 0,   mech: 0,   drone: 0,   heli: 0,   bomber: 0},   speedMult: 1.0 },
             2: { totalScore: 80,  rates: {inf: 120, tank: 250, mech: 0,   drone: 0,   heli: 0,   bomber: 0},   speedMult: 1.2 },
@@ -100,8 +314,12 @@
 
         let shotsFired = 0;
         let swarmMissilesReady = 0;
+        let fleetReady = 0; 
+        
         let frameCount = 0;
         let levelFrames = 0; 
+        let barrierFlash = 0;
+        let homingBeepTimer = 0;
         
         let fireCooldown = 0;
 
@@ -121,6 +339,7 @@
 
         // Entities
         let missiles = [];
+        let friendlyDrones = [];
         let lasers = [];
         let bullets = [];
         let explosions = [];
@@ -167,6 +386,8 @@
 
         // Input Handling
         window.addEventListener('keydown', (e) => {
+            sfx.init(); 
+            
             if (e.code === 'KeyT') isDark = !isDark;
             
             if (gameState === 'START_MENU') {
@@ -218,6 +439,12 @@
                     }
                 }
                 
+                if (e.code === 'KeyE') {
+                    if (gameMode === 'RVD' && fleetReady > 0) {
+                        deployFleet();
+                    }
+                }
+                
                 if (e.code === 'KeyQ') {
                     if (gameMode === 'RVD') {
                         if (activeWeapon === 'MISSILE' && swarmMissilesReady > 0) activeWeapon = 'SWARM';
@@ -256,6 +483,7 @@
         });
 
         canvas.addEventListener('mousedown', (e) => {
+            sfx.init();
             isMouseDown = true;
             
             if (gameState === 'START_MENU') {
@@ -283,7 +511,6 @@
                     clickedBox = true;
                 }
                 
-                // Do not auto-start on click. Wait for space to launch
                 return;
             }
             
@@ -301,6 +528,12 @@
             
             if (gameState !== 'PLAYING') return;
             if (mouse.x <= player.x + 20 || isIntermission || fireCooldown > 0) return;
+
+            if (activeWeapon === 'FLEET') {
+                deployFleet();
+                fireCooldown = 60;
+                return;
+            }
 
             if (activeWeapon === 'LASER') {
                 fireLaser();
@@ -326,6 +559,23 @@
                 fireCooldown = 45; 
             }
         });
+
+        function deployFleet() {
+            fleetReady--;
+            activeWeapon = 'MISSILE';
+            sfx.playTripleMissile();
+            
+            let topY = 110;
+            let bottomY = groundY - 100;
+            let stepY = (bottomY - topY) / 4;
+            let offsetX = 80;
+            
+            friendlyDrones.push({ x: -50 - offsetX * 2, y: topY, vx: 5, fireTimer: 20 }); 
+            friendlyDrones.push({ x: -50 - offsetX, y: topY + stepY, vx: 5, fireTimer: 30 }); 
+            friendlyDrones.push({ x: -50, y: topY + stepY * 2, vx: 5, fireTimer: 40 }); // Middle (Front)
+            friendlyDrones.push({ x: -50 - offsetX, y: topY + stepY * 3, vx: 5, fireTimer: 30 }); 
+            friendlyDrones.push({ x: -50 - offsetX * 2, y: bottomY, vx: 5, fireTimer: 20 }); 
+        }
 
         function getDistanceToLineSegment(px, py, x1, y1, x2, y2) {
             let A = px - x1;
@@ -364,13 +614,14 @@
         function getPodAngle() {
             let startX = player.x + 10;
             let startY = player.y - 15;
-            let targetX = mouse.x;
-            let targetY = Math.min(mouse.y, groundY);
             
             if (activeWeapon === 'MACHINE_GUN') {
-                let maxRange = width / 3;
-                if (targetX > maxRange) targetX = maxRange;
+                let aimAngle = Math.atan2(mouse.y - startY, mouse.x - startX);
+                return aimAngle;
             }
+
+            let targetX = mouse.x;
+            let targetY = Math.min(mouse.y, groundY);
 
             if ((activeWeapon === 'MISSILE' || activeWeapon === 'SWARM') && shootingMode === 'TARGET' && targetX > startX) {
                 let params = getTargetModeArcParams(targetX, targetY);
@@ -384,12 +635,18 @@
         function triggerShotLogic() {
             shotsFired++;
             if (gameMode === 'RVD' && shotsFired % 5 === 0) {
+                if (swarmMissilesReady === 0) sfx.playAlert();
                 swarmMissilesReady = 1; 
+            }
+            if (gameMode === 'RVD' && shotsFired > 0 && shotsFired % 10 === 0) {
+                if (fleetReady === 0) sfx.playAlert();
+                fleetReady = 1; 
             }
             return (shotsFired % 3 === 0);
         }
 
         function fireMachineGun() {
+            sfx.playMG();
             let startX = player.x + 10;
             let startY = player.y - 15;
             let aimAngle = getPodAngle();
@@ -405,6 +662,7 @@
         }
 
         function fireLaser() {
+            sfx.playLaser();
             let isTriBeam = triggerShotLogic();
             let startX = player.x + 10;
             let startY = player.y - 15;
@@ -442,6 +700,10 @@
                 isCluster = triggerShotLogic();
             }
 
+            if (isSwarm) sfx.playSwarmLaunch();
+            else if (isCluster) sfx.playTripleMissile();
+            else sfx.playMissile();
+
             let targetX = mouse.x;
             let targetY = Math.min(mouse.y, groundY); 
             
@@ -459,7 +721,8 @@
                 isCluster: isCluster,
                 isSwarmParent: isSwarm,
                 age: 0,
-                splitTime: -1 
+                splitTime: -1,
+                isRed: isCluster || isSwarm
             });
         }
 
@@ -473,6 +736,10 @@
             } else {
                 isCluster = triggerShotLogic();
             }
+
+            if (isSwarm) sfx.playSwarmLaunch();
+            else if (isCluster) sfx.playTripleMissile();
+            else sfx.playMissile();
 
             let startX = player.x + 10;
             let startY = player.y - 15; 
@@ -515,7 +782,8 @@
                 isSwarmParent: isSwarm,
                 hasSplit: false,
                 age: 0,
-                splitTime: splitTime
+                splitTime: splitTime,
+                isRed: isCluster || isSwarm 
             });
         }
 
@@ -539,13 +807,17 @@
             missiles = [];
             lasers = [];
             bullets = [];
+            friendlyDrones = [];
         }
 
         function resetGame() {
             shotsFired = 0;
             swarmMissilesReady = 0;
+            fleetReady = 0;
             fireCooldown = 0;
+            barrierFlash = 0;
             missiles = [];
+            friendlyDrones = [];
             lasers = [];
             bullets = [];
             explosions = [];
@@ -624,6 +896,7 @@
         }
 
         function createExplosion(x, y, radius = 45, color = null) {
+            sfx.playExplosion(radius);
             explosions.push({
                 x: x, y: y,
                 radius: 0,
@@ -651,15 +924,12 @@
         function drawUIMissile(x, y, w, h) {
             let tipH = h * 0.35;
             let bodyH = h - tipH;
-            
             ctx.fillRect(x - w/2, y + tipH, w, bodyH);
-            
             ctx.beginPath();
             ctx.moveTo(x - w/2, y + tipH);
             ctx.lineTo(x, y);
             ctx.lineTo(x + w/2, y + tipH);
             ctx.fill();
-            
             let oldFill = ctx.fillStyle;
             ctx.fillStyle = theme.enemyDetail();
             ctx.fillRect(x - w/2, y + h - bodyH * 0.3, w, bodyH * 0.3);
@@ -676,6 +946,7 @@
             if (gameState !== 'PLAYING') return;
             
             frameCount++;
+            if (barrierFlash > 0) barrierFlash--;
             
             if (fireCooldown > 0) fireCooldown--;
 
@@ -698,6 +969,7 @@
             } else {
                 levelFrames++;
                 if (levelBudget <= 0 && enemies.length === 0) {
+                    sfx.playLevelUp();
                     isIntermission = true;
                     intermissionTimer = 180; 
                 }
@@ -731,7 +1003,8 @@
                 if (lasers[i].timer <= 0) lasers.splice(i, 1);
             }
             
-            let maxRangeMG = width / 3;
+            let maxRangeX = width / 3;
+            let maxRangeY = player.y - 15; 
 
             for (let i = bullets.length - 1; i >= 0; i--) {
                 let b = bullets[i];
@@ -742,7 +1015,7 @@
                 
                 let dx = b.x - b.startX;
                 let dy = b.y - b.startY;
-                let isOutsideEllipse = ((dx * dx) / (maxRangeMG * maxRangeMG)) + ((dy * dy) / (maxRangeMG * maxRangeMG)) > 1;
+                let isOutsideEllipse = ((dx * dx) / (maxRangeX * maxRangeX)) + ((dy * dy) / (maxRangeY * maxRangeY)) > 1;
                 let detonated = false;
                 
                 if (isOutsideEllipse || b.y >= groundY || b.y < 0) {
@@ -775,6 +1048,42 @@
 
             for (let en of enemies) en.isTargeted = false;
 
+            for(let i = friendlyDrones.length - 1; i >= 0; i--) {
+                let fd = friendlyDrones[i];
+                fd.x += fd.vx;
+                fd.fireTimer--;
+                if (fd.fireTimer <= 0) {
+                    if (enemies.length > 0) {
+                        fd.fireTimer = 40 + Math.random() * 40;
+                        let target = enemies[Math.floor(Math.random() * enemies.length)];
+                        missiles.push({
+                            mode: 'FRIENDLY_MISSILE',
+                            x: fd.x, y: fd.y + 10,
+                            vx: 0, vy: 5, g: 0, 
+                            path: [], 
+                            targetObj: target,
+                            speed: 8, 
+                            age: 0,
+                            isBlue: true 
+                        });
+                    } else {
+                        fd.fireTimer = 10; 
+                    }
+                }
+                if (fd.x > width + 100) friendlyDrones.splice(i, 1);
+            }
+
+            let hasHoming = missiles.some(m => m.mode === 'SWARM_CHILD' || m.mode === 'FRIENDLY_MISSILE');
+            if (hasHoming) {
+                homingBeepTimer--;
+                if (homingBeepTimer <= 0) {
+                    sfx.playHoming();
+                    homingBeepTimer = 10;
+                }
+            } else {
+                homingBeepTimer = 0;
+            }
+
             for (let i = missiles.length - 1; i >= 0; i--) {
                 let m = missiles[i];
                 m.age++;
@@ -787,7 +1096,7 @@
                     let t = 1 - (m.timer / m.initialTimer);
                     m.x = m.startX + (m.targetX - m.startX) * t;
                     m.y = m.startY + (m.targetY - m.startY) * t - m.arcHeight * Math.sin(t * Math.PI);
-                } else if (m.mode === 'SWARM_CHILD') {
+                } else if (m.mode === 'SWARM_CHILD' || m.mode === 'FRIENDLY_MISSILE') {
                     if (m.targetObj && enemies.includes(m.targetObj)) {
                         m.targetObj.isTargeted = true; 
                         let hitY = (['tank', 'infantry', 'mech'].includes(m.targetObj.type)) ? m.targetObj.y - m.targetObj.height/2 : m.targetObj.y;
@@ -848,7 +1157,7 @@
                         for(let k=0; k<10; k++) {
                             let target = availableTargets.length > 0 ? availableTargets[k % availableTargets.length] : null;
                             let angleOffset = (Math.random() - 0.5) * Math.PI * 0.8; 
-                            let speed = 12 + Math.random() * 3; 
+                            let speed = 7 + Math.random() * 2; 
                             let baseAngle = Math.atan2(curVy, curVx);
                             let newAngle = baseAngle + angleOffset;
                             missiles.push({
@@ -860,7 +1169,8 @@
                                 path: [...m.path], 
                                 targetObj: target,
                                 speed: speed,
-                                age: 0
+                                age: 0,
+                                isRed: true 
                             });
                         }
                         missiles.splice(i, 1);
@@ -878,6 +1188,7 @@
 
                     if (shouldSplit) {
                         m.isCluster = false; 
+                        m.isRed = true; 
                         if (m.mode === 'CHARGE') m.hasSplit = true;
                         
                         const spawnChild = (angleOffset, targetOffsetX) => {
@@ -904,7 +1215,8 @@
                                     timer: childTimer,
                                     path: [...m.path], 
                                     isCluster: false,
-                                    hasSplit: true
+                                    hasSplit: true,
+                                    isRed: true 
                                 });
                             } else {
                                 let speed = Math.hypot(m.vx, m.vy);
@@ -920,7 +1232,8 @@
                                     g: m.g,
                                     path: [...m.path], 
                                     isCluster: false,
-                                    hasSplit: true
+                                    hasSplit: true,
+                                    isRed: true 
                                 });
                             }
                         };
@@ -941,7 +1254,7 @@
                     detonated = true;
                 }
                 
-                if (m.mode === 'CHARGE' || m.mode === 'SWARM_CHILD') {
+                if (m.mode === 'CHARGE' || m.mode === 'SWARM_CHILD' || m.mode === 'FRIENDLY_MISSILE') {
                     if (m.y >= groundY || m.x > width + 100 || m.y < -100 || m.x < -100) detonated = true;
                     if (!detonated) {
                         for (let en of enemies) {
@@ -958,7 +1271,9 @@
                 if (detonated) {
                     if (m.x < width && m.x > -50 && m.y > -50 && m.y <= groundY + 10) {
                         let expColor = null;
-                        if (m.isCluster || m.mode === 'CLUSTER_CHILD' || m.isSwarmParent || m.mode === 'SWARM_CHILD') {
+                        if (m.isBlue) {
+                            expColor = '#0af';
+                        } else if (m.isRed || m.mode === 'CLUSTER_CHILD' || m.isSwarmParent || m.mode === 'SWARM_CHILD') {
                             expColor = '#f00';
                         }
                         createExplosion(m.x, Math.min(m.y, groundY), 45, expColor);
@@ -988,11 +1303,15 @@
                 
                 if (en.type === 'heli') en.y += Math.sin(frameCount * 0.05) * 0.5;
 
-                if (en.x < player.x - 30) {
+                if (en.x < player.x - 60) {
                     lives--;
+                    barrierFlash = 30;
                     createExplosion(player.x, player.y, 40); 
                     enemies.splice(i, 1);
-                    if (lives <= 0) gameState = 'GAME_OVER';
+                    if (lives <= 0) {
+                        sfx.playGameOver();
+                        gameState = 'GAME_OVER';
+                    }
                     continue;
                 }
 
@@ -1069,6 +1388,27 @@
 
             ctx.fillStyle = (gameState === 'PAUSED') ? theme.bg() : theme.bgTrail();
             ctx.fillRect(0, 0, width, height);
+            
+            if (barrierFlash > 0 && gameState === 'PLAYING') {
+                ctx.save();
+                ctx.globalAlpha = barrierFlash / 40;
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+                ctx.fillRect(0, 0, width, height);
+                ctx.restore();
+            }
+
+            if (gameState === 'PLAYING') {
+                ctx.save();
+                ctx.strokeStyle = barrierFlash > 0 ? '#f00' : 'rgba(255, 0, 0, 0.1)';
+                ctx.lineWidth = barrierFlash > 0 ? 4 : 2;
+                if (barrierFlash > 0) ctx.shadowBlur = 15;
+                ctx.shadowColor = '#f00';
+                ctx.beginPath();
+                ctx.moveTo(player.x - 60, groundY);
+                ctx.lineTo(player.x - 60, 0);
+                ctx.stroke();
+                ctx.restore();
+            }
 
             ctx.strokeStyle = theme.ground();
             ctx.lineWidth = 2;
@@ -1085,7 +1425,9 @@
                 ctx.beginPath();
                 let podX = player.x + 10;
                 let podY = player.y - 15;
-                ctx.ellipse(podX, podY, width / 3, podY, 0, Math.PI, Math.PI * 2);
+                let rx = width / 3;
+                let ry = podY; 
+                ctx.ellipse(podX, podY, rx, ry, 0, Math.PI, Math.PI * 2);
                 ctx.stroke();
                 ctx.restore();
             }
@@ -1116,7 +1458,7 @@
 
             if (gameState === 'PLAYING' || gameState === 'PAUSED') {
                 let chSize = 15;
-                ctx.strokeStyle = activeWeapon === 'LASER' ? theme.laser() : (activeWeapon === 'MACHINE_GUN' ? theme.mg() : (activeWeapon === 'SWARM' ? '#f00' : theme.fg()));
+                ctx.strokeStyle = activeWeapon === 'LASER' ? theme.laser() : (activeWeapon === 'MACHINE_GUN' ? theme.mg() : (activeWeapon === 'SWARM' || activeWeapon === 'FLEET' ? '#f00' : theme.fg()));
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(mouse.x - chSize, mouse.y);
@@ -1210,6 +1552,10 @@
                 drawUIMissile(-4, -5, 4, 15);
                 drawUIMissile(4, -5, 4, 15);
                 drawUIMissile(12, 0, 4, 15);
+            } else if (activeWeapon === 'FLEET') {
+                ctx.fillStyle = '#0af';
+                ctx.fillRect(-15, -4, 30, 8);
+                ctx.fillRect(-10, -8, 20, 16);
             } else if (activeWeapon === 'LASER') {
                 if (nextIsCluster) {
                     ctx.fillStyle = theme.laser();
@@ -1239,6 +1585,7 @@
             if (fireCooldown > 0) {
                 ctx.fillStyle = activeWeapon === 'LASER' ? theme.laser() : (activeWeapon === 'MACHINE_GUN' ? theme.mg() : theme.fg());
                 let cooldownMax = activeWeapon === 'MACHINE_GUN' ? 6 : (activeWeapon === 'LASER' ? 30 : 45);
+                if (activeWeapon === 'FLEET') cooldownMax = 60;
                 let pct = 1 - (fireCooldown / cooldownMax);
                 ctx.fillRect(-35, 0, 70 * pct, 6);
             } else {
@@ -1246,13 +1593,21 @@
                 ctx.fillRect(-35, 0, 70, 6);
             }
 
-            if (gameMode === 'RVD' && swarmMissilesReady > 0 && activeWeapon !== 'SWARM') {
-                ctx.translate(0, 25); 
-                ctx.fillStyle = '#f00';
-                drawUIMissile(-9, 0, 3, 11);
-                drawUIMissile(-3, -4, 3, 11);
-                drawUIMissile(3, -4, 3, 11);
-                drawUIMissile(9, 0, 3, 11);
+            if (gameMode === 'RVD') {
+                ctx.translate(0, 25);
+                if (swarmMissilesReady > 0 && activeWeapon !== 'SWARM') {
+                    ctx.fillStyle = '#f00';
+                    drawUIMissile(-9, 0, 3, 11);
+                    drawUIMissile(-3, -4, 3, 11);
+                    drawUIMissile(3, -4, 3, 11);
+                    drawUIMissile(9, 0, 3, 11);
+                }
+                if (fleetReady > 0 && activeWeapon !== 'FLEET') {
+                    ctx.fillStyle = '#0af';
+                    let fleetOffsetX = (swarmMissilesReady > 0 && activeWeapon !== 'SWARM') ? 20 : 0;
+                    ctx.fillRect(fleetOffsetX - 8, -2, 16, 4);
+                    ctx.fillRect(fleetOffsetX - 4, -5, 8, 10);
+                }
             }
 
             ctx.restore();
@@ -1267,12 +1622,25 @@
 
             ctx.restore(); 
 
+            for (let fd of friendlyDrones) {
+                ctx.save();
+                ctx.translate(fd.x, fd.y);
+                ctx.fillStyle = theme.enemy();
+                ctx.fillRect(-18, -9, 36, 18);
+                ctx.fillStyle = theme.enemyDetail();
+                ctx.fillRect(-21, -15, 9, 6);
+                ctx.fillRect(12, -15, 9, 6);
+                ctx.fillStyle = '#0af'; 
+                ctx.fillRect(6, -3, 8, 6);
+                ctx.restore();
+            }
+
             for (let m of missiles) {
                 let isClust = m.isCluster || m.mode === 'CLUSTER_CHILD';
                 let isSwarm = m.isSwarmParent || m.mode === 'SWARM_CHILD';
 
                 if (m.path.length > 1) {
-                    ctx.strokeStyle = isClust ? '#f00' : (isSwarm ? '#fff' : theme.trail()); 
+                    ctx.strokeStyle = isClust ? '#f00' : (isSwarm ? '#fff' : (m.isBlue ? '#0af' : theme.trail())); 
                     ctx.lineWidth = m.isCluster ? 4 : 2; 
                     ctx.beginPath();
                     ctx.moveTo(m.path[0].x, m.path[0].y);
@@ -1303,9 +1671,9 @@
                 
                 ctx.rotate(mAngle);
                 
-                let size = (m.isCluster || m.isSwarmParent) ? 1.5 : (m.mode === 'SWARM_CHILD' ? 0.7 : 1);
+                let size = (m.isCluster || m.isSwarmParent) ? 1.5 : ((m.mode === 'SWARM_CHILD' || m.mode === 'FRIENDLY_MISSILE') ? 0.7 : 1);
                 
-                ctx.fillStyle = (isClust || isSwarm) ? '#f00' : theme.fg();
+                ctx.fillStyle = m.isBlue ? '#0af' : ((isClust || isSwarm) ? '#f00' : theme.fg());
                 ctx.fillRect(-6 * size, -2 * size, 10 * size, 4 * size);
                 ctx.beginPath();
                 ctx.moveTo(4 * size, -2 * size);
@@ -1334,35 +1702,21 @@
                     ctx.fillStyle = theme.enemyDetail();
                     ctx.fillRect(en.x - 21, en.y - 15, 9, 6);
                     ctx.fillRect(en.x + 12, en.y - 15, 9, 6);
-                    
-                    if (gameMode === 'RVD') {
-                        ctx.fillStyle = '#f00';
-                        ctx.fillRect(en.x - 14, en.y - 3, 8, 6);
-                    }
+                    ctx.fillStyle = '#f00';
+                    ctx.fillRect(en.x - 14, en.y - 3, 8, 6);
                 
                 } else if (en.type === 'infantry') {
-                    if (gameMode === 'RVD') {
-                        ctx.fillStyle = theme.enemyDetail();
-                        ctx.fillRect(en.x - 10, en.y - 36, 20, 22); 
-                        ctx.fillStyle = theme.fg();
-                        if (Math.floor(frameCount / 10) % 2 === 0 && gameState !== 'PAUSED') {
-                            ctx.fillRect(en.x - 8, en.y - 14, 6, 14);
-                            ctx.fillRect(en.x + 2, en.y - 14, 6, 14);
-                        } else {
-                            ctx.fillRect(en.x - 3, en.y - 14, 6, 14);
-                        }
-                        ctx.fillStyle = '#f00'; 
-                        ctx.fillRect(en.x - 6, en.y - 30, 12, 4);
+                    ctx.fillStyle = theme.enemyDetail();
+                    ctx.fillRect(en.x - 10, en.y - 36, 20, 22); 
+                    ctx.fillStyle = theme.fg();
+                    if (Math.floor(frameCount / 10) % 2 === 0 && gameState !== 'PAUSED') {
+                        ctx.fillRect(en.x - 8, en.y - 14, 6, 14);
+                        ctx.fillRect(en.x + 2, en.y - 14, 6, 14);
                     } else {
-                        ctx.fillRect(en.x - 7.5, en.y - 36, 15, 36);
-                        ctx.fillStyle = theme.fg();
-                        if (Math.floor(frameCount / 10) % 2 === 0 && gameState !== 'PAUSED') {
-                            ctx.fillRect(en.x - 6, en.y, 4.5, 9);
-                            ctx.fillRect(en.x + 1.5, en.y, 4.5, 9);
-                        } else {
-                            ctx.fillRect(en.x - 1.5, en.y, 4.5, 9);
-                        }
+                        ctx.fillRect(en.x - 3, en.y - 14, 6, 14);
                     }
+                    ctx.fillStyle = '#f00'; 
+                    ctx.fillRect(en.x - 6, en.y - 30, 12, 4);
                 } else if (en.type === 'tank') {
                     ctx.fillRect(en.x - 27, en.y - 18, 54, 18);
                     ctx.fillStyle = theme.enemyDetail();
@@ -1373,6 +1727,8 @@
                     ctx.moveTo(en.x - 12, en.y - 24);
                     ctx.lineTo(en.x - 37.5, en.y - 24);
                     ctx.stroke();
+                    ctx.fillStyle = '#f00';
+                    ctx.fillRect(en.x - 12, en.y - 22, 10, 4);
                 } else if (en.type === 'mech') {
                     ctx.fillStyle = theme.enemyDetail();
                     ctx.fillRect(en.x - 21, en.y - 30, 42, 36); 
@@ -1392,6 +1748,8 @@
                     ctx.moveTo(en.x - 21, en.y - 12);
                     ctx.lineTo(en.x - 39, en.y);
                     ctx.stroke();
+                    ctx.fillStyle = '#f00';
+                    ctx.fillRect(en.x - 12, en.y - 24, 18, 4);
                 } else if (en.type === 'heli') {
                     ctx.fillRect(en.x - 15, en.y - 9, 30, 18);
                     ctx.fillRect(en.x + 15, en.y - 3, 21, 6);
@@ -1405,6 +1763,8 @@
                     } else {
                         ctx.fillRect(en.x - 18, en.y - 18, 36, 3);
                     }
+                    ctx.fillStyle = '#f00';
+                    ctx.fillRect(en.x + 33, en.y - 9, 3, 12);
                 } else if (en.type === 'bomber') {
                     ctx.beginPath();
                     ctx.moveTo(en.x - 30, en.y - 13); 
@@ -1414,6 +1774,8 @@
                     ctx.fill();
                     ctx.fillStyle = theme.enemyDetail();
                     ctx.fillRect(en.x - 27, en.y - 3, 9, 6);
+                    ctx.fillStyle = '#f00';
+                    ctx.fillRect(en.x - 25, en.y - 3, 8, 6);
                 }
 
                 if (en.isTargeted) {
@@ -1443,6 +1805,11 @@
                 ctx.fillText(`LEVEL: ${level}/10`, width / 2, 45);
             } else {
                 ctx.fillText(`ENDLESS WAVE: ${level}`, width / 2, 45);
+                if (fleetReady > 0 && gameState === 'PLAYING') {
+                    ctx.fillStyle = '#0af';
+                    ctx.font = '20px "Courier New"';
+                    ctx.fillText(`Fleet Ready: (E) Launch Command`, width / 2, 75);
+                }
             }
 
             let controlsAlpha = 1.0;
@@ -1466,10 +1833,11 @@
                 if (gameMode === 'MAIN') {
                     ctx.fillText(`[1-3] or [Q] Weapon: ${activeWeapon.replace('_', ' ')}`, width - 20, 85);
                 } else {
-                    ctx.fillStyle = activeWeapon === 'SWARM' ? '#f00' : theme.fg();
-                    ctx.fillText(`Weapon: ${activeWeapon === 'SWARM' ? 'SWARM ROCKET' : 'STANDARD ROCKET'}`, width - 20, 85);
+                    let wStr = activeWeapon === 'SWARM' ? 'SWARM ROCKET' : (activeWeapon === 'FLEET' ? 'DRONE FLEET' : 'STANDARD ROCKET');
+                    ctx.fillStyle = activeWeapon === 'SWARM' ? '#f00' : (activeWeapon === 'FLEET' ? '#0af' : theme.fg());
+                    ctx.fillText(`Weapon: ${wStr}`, width - 20, 85);
                     ctx.fillStyle = theme.fg();
-                    ctx.fillText(`[Q] Equip Swarm: ${swarmMissilesReady > 0 ? 'YES' : 'NO'}`, width - 20, 105);
+                    ctx.fillText(`[Q] Equip Weapon - Swarm: ${swarmMissilesReady>0?'YES':'NO'} | Fleet: ${fleetReady>0?'YES':'NO'}`, width - 20, 105);
                     ctx.fillText(`[M] Mode: ${shootingMode}`, width - 20, 125);
                 }
                 ctx.fillText(`[P] Pause`, width - 20, gameMode === 'MAIN' ? 105 : 145);
